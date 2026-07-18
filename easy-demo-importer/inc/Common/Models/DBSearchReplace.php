@@ -176,7 +176,7 @@ class DBSearchReplace {
 		if ( is_array( $fields ) ) {
 			foreach ( $fields as $column ) {
 				$columns[] = $column->Field;
-				if ( 'PRI' == $column->Key ) {
+				if ( 'PRI' === $column->Key ) {
 					$primary_key = $column->Field;
 				}
 			}
@@ -245,9 +245,11 @@ class DBSearchReplace {
 		// Loop through the data.
 		foreach ( $data as $row ) {
 			++$current_row;
-			$update_sql = [];
-			$where_sql  = [];
-			$upd        = false;
+			$update_sql   = [];
+			$where_sql    = [];
+			$upd          = false;
+			$should_skip  = false;
+			$update_later = false;
 
 			foreach ( $columns as $column ) {
 				$data_to_fix = $row[ $column ];
@@ -312,8 +314,8 @@ class DBSearchReplace {
 					)
 				);
 
-				// SQL already prepared.
-				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				// SQL already prepared; column names are DB-sourced and values are escaped via mysql_escape_mimic().
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
 				$result = $this->wpdb->query( $sql );
 
 				if ( ! $result ) {
@@ -350,7 +352,7 @@ class DBSearchReplace {
 	 *
 	 * @param string         $from String we're looking to replace.
 	 * @param string         $to What we want it to be replaced with.
-	 * @param array          $data Used to pass any subordinate arrays back to in.
+	 * @param string|array   $data Used to pass any subordinate arrays back to in.
 	 * @param boolean        $serialised Does the array passed via $data need serialising.
 	 * @param string|boolean $case_insensitive Set to 'on' if we should ignore case, false otherwise.
 	 *
@@ -416,7 +418,7 @@ class DBSearchReplace {
 	 */
 	public function mysql_escape_mimic( $input ) {
 		if ( is_array( $input ) ) {
-			return array_map( __METHOD__, $input );
+			return array_map( [ $this, 'mysql_escape_mimic' ], $input );
 		}
 
 		if ( ! empty( $input ) && is_string( $input ) ) {
@@ -454,7 +456,7 @@ class DBSearchReplace {
 		$serialized_string = trim( $serialized_string );
 
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize, WordPress.PHP.NoSilencedErrors.Discouraged
-		return @unserialize( $serialized_string );
+		return @unserialize( $serialized_string, [ 'allowed_classes' => false ] );
 	}
 
 	/**

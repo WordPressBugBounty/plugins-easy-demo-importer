@@ -15,6 +15,7 @@ namespace SigmaDevs\EasyDemoImporter\Common\Functions;
 use WP_Post;
 use WP_Error;
 use WP_Query;
+use SigmaDevs\EasyDemoImporter\Common\Utils\OutputGuard;
 
 // Do not allow directly accessing this file.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -26,14 +27,24 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * @since 1.0.0
  */
-class Helpers {
+	class Helpers {
+	/**
+	 * Whitelist of allowed view names for renderView().
+	 *
+	 * @var array
+	 * @since 2.0.0
+	 */
+	private static $allowedViews = [
+		'demo-import',
+		'server-status',
+	];
+
 	/**
 	 * Gets Ajax URL.
 	 *
 	 * @static
 	 *
-	 * @return string
-	 * @since  1.0.0
+	 * @return string	 * @since  1.0.0
 	 */
 	public static function ajaxUrl() {
 		return admin_url( 'admin-ajax.php' );
@@ -71,14 +82,21 @@ class Helpers {
 	 * @since  1.0.0
 	 */
 	public static function verifyAjaxCall() {
+		// Drop anything other code printed before this handler got control, so
+		// the JSON this request answers with stays parseable. Every phase routes
+		// through here, including the error responses below.
+		OutputGuard::reset();
+
 		// Verifies the Ajax request.
 		if ( ! check_ajax_referer( self::nonceText(), self::nonceId(), false ) ) {
-			wp_send_json(
+			wp_send_json_error(
 				[
-					'error'        => true,
 					'errorMessage' => esc_html__( 'Security check failed. Access denied.', 'easy-demo-importer' ),
-				]
+				],
+				403
 			);
+			// @phpstan-ignore deadCode.unreachable
+			wp_die();
 		}
 
 		// Verifies the user role.
@@ -86,19 +104,21 @@ class Helpers {
 	}
 
 	/**
-	 * Verify if the current user has the 'import' capability.
+	 * Verify if the current user has the 'manage_options' capability.
 	 *
 	 * @return void
 	 * @since 1.0.0
 	 */
 	public static function verifyUserRole() {
-		if ( ! current_user_can( 'import' ) ) {
-			wp_send_json(
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error(
 				[
-					'error'        => true,
 					'errorMessage' => esc_html__( 'You don\'t have permission to perform this action.', 'easy-demo-importer' ),
-				]
+				],
+				403
 			);
+			// @phpstan-ignore deadCode.unreachable
+			wp_die();
 		}
 	}
 
@@ -196,6 +216,15 @@ class Helpers {
 	 * @since  1.0.0
 	 */
 	public static function renderView( $viewName, $args = [] ) {
+		// Enforce whitelist for security.
+		if ( ! in_array( $viewName, self::$allowedViews, true ) ) {
+			return new WP_Error(
+				'invalid_view_name',
+				/* translators: View file name. */
+				sprintf( esc_html__( 'Invalid view name: %s', 'easy-demo-importer' ), esc_html( $viewName ) )
+			);
+		}
+
 		$file       = str_replace( '.', '/', $viewName );
 		$file       = ltrim( $file, '/' );
 		$pluginPath = sd_edi()->getData()['plugin_path'];
@@ -204,9 +233,9 @@ class Helpers {
 
 		if ( ! file_exists( $viewFile ) ) {
 			return new WP_Error(
-				'brock',
+				'view_file_not_found',
 				/* translators: View file name. */
-				sprintf( esc_html__( '%s file not found', 'easy-demo-importer' ), $viewFile )
+				sprintf( esc_html__( '%s file not found', 'easy-demo-importer' ), esc_html( $viewFile ) )
 			);
 		}
 

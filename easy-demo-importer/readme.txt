@@ -3,8 +3,8 @@ Contributors: sigmadevs
 Donate link:
 Tags: demo importer, one click demo importer, theme demo importer, WordPress demo importer, content import plugin
 Requires at least: 5.5
-Tested up to: 6.9
-Stable tag: 1.1.6
+Tested up to: 7.0
+Stable tag: 2.0.0
 Requires PHP: 7.4
 License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -28,6 +28,10 @@ Are you tired of the complex and time-consuming process of setting up your WordP
 * **Based on WordPress XML Importer:** Built on the reliable WordPress XML Importer, our plugin ensures a robust import process.
 * **Full Site or Single Site Import:** Demo importer can be configured to import a whole demo or individual demos from a multipurpose theme.
 * **Complete Content Import:** Imports all contents and Customizer settings, including widgets, menus, options data, Redux Framework data, Slider Revolution slides, and more, ensuring your website mirrors the demo in both appearance and functionality.
+* **Resumable, Timeout-Proof Import:** Large and WooCommerce demos import in time-boxed batches that survive gateway timeouts and auto-resume if interrupted.
+* **Manual Import:** Upload your own content, media, and settings — as separate files or a single .zip bundle — without a theme configuration.
+* **One-Click Rollback:** Create a restore point before importing and revert your site with a single click.
+* **Activity Log:** Every import and thumbnail run is recorded with a live, per-item log for easy troubleshooting.
 * **User-Friendly Interface:** Our intuitive interface makes it easy for users of all skill levels to import demo data.
 * **Universal Theme Compatibility:** Can be configured to work seamlessly with a wide range of WordPress themes, ensuring broad compatibility.
 * **Developer Hooks:** offers a wide range of hooks that give theme developers full control to perform advanced custom actions. These hooks allow for precise adjustments and customizations in the import process.
@@ -136,16 +140,43 @@ For any inquiries, bug reports, or suggestions, please submit your request [here
 
 == Changelog ==
 
+= 2.0.0 (18-July-2026) =
+* Feature: Resumable, chunked WXR import — large/WooCommerce demos no longer fail with 524/503 gateway timeouts.
+* Feature: Manual import — upload your own content, media, and settings as separate files or a single .zip bundle.
+* Feature: One-click rollback — a restore point is created before import so you can revert in one click.
+* Feature: Activity log — every import and thumbnail run is recorded with a live, per-item log.
+* Feature: Regenerate Thumbnails tool (Appearance → Easy Thumbnails) — resumable, with force-all-sizes and one-at-a-time modes.
+* Feature: Determinate progress bar that auto-resumes after connection drops or gateway timeouts.
+* Feature: Interrupted imports resurface on reload with a Resume / Start Over prompt.
+* Feature: LayerSlider import support.
+* Feature: WP-CLI support — `wp edi demos`, `regenerate`, and `rollback`.
+* Feature: Pre-import readiness checks gate Start Import until the server is ready.
+* Feature: Retry individual failed media downloads from the result screen.
+* Feature: Bundled media import — demo images load from the package instead of downloading.
+* Add: Full compatibility with WordPress 7.0.
+* Security: Completed the fix for the SVG-upload Stored XSS (CVE-2024-9071), closing an Author-role restriction bypass still exploitable through 1.1.6. Reported by Artus KG.
+* Security: Hardened archive extraction (ZipSlip), plugin-installer downloads, and PHP file loading.
+* Fix: Elementor global settings (container width, colors, fonts) are applied correctly after import.
+* Fix: Improved Fluent Forms import, settings validation, demo-file download verification, and AJAX input sanitization.
+* Fix: Prevented a JavaScript crash when network requests fail or time out.
+* Fix: Resolved empty navigation menus by reconciling item counts and auto-creating missing menus.
+* Fix: Isolated import responses to prevent silent failures caused by third-party plugin output.
+* Fix: Ensured extracted demo files are automatically removed after a successful import.
+* Fix: Boosted memory limits and resource allocation during the finalization stage.
+* Performance: Batched attachment-URL updates and checkpointed progress for faster media handling.
+* Tweak: Improved Customizer, Widgets, and database search-replace handling; refactored slider import.
+* Tweak: A readiness step shows the "View full system status" link inline; improved uninstall cleanup.
+* Tweak: Recorded per-item import notices in the activity log with accurate severity levels.
+
 = 1.1.6 (28-February-2026) =
 * Add: Full compatibility with WordPress 6.9.
-* Add: Option to skip image regeneration during import — speeds up the process.
+* Add: Option to skip image regeneration during import to speed up the process.
 * Add: Smart scroll indicators on the demo preview image in the import modal.
-* Fix: PHP 8.4 compatibility — wp_register_script() now uses the args array format with deferred loading strategy.
-* Fix: Added null guard in upload directory cleanup to prevent fatal errors on unreadable directories.
+* Fix: PHP 8.4 compatibility improvements for script loading.
+* Fix: Prevented fatal errors when cleaning upload directories that cannot be read.
 * Fix: Added empty check on demo data config to prevent warnings when demoData is absent.
-* Tweak: Refreshed some user-facing strings for more professional and consistent wording.
+* Tweak: Improved wording of some user-facing messages.
 * Update: Updated enshrined/svg-sanitize dependency.
-* Dev: Added .wp-env.json for local development with WordPress 6.9 + PHP 8.4 via @wordpress/env.
 
 = 1.1.5 (22-July-2025) =
 * Add: Full compatibility with WordPress 6.8.
@@ -197,7 +228,7 @@ For any inquiries, bug reports, or suggestions, please submit your request [here
 * Update: Added/renamed various action and filter hooks.
 
 = 1.1.0 (20-February-2024) =
-* Feature: Added support for importing Slider Revolution Sliders.
+* Feature: Added support for importing Slider Revolution Slides.
 * Feature: Introduced tabbed categories in the demo import interface.
 * Feature: Implemented a search functionality for quicker access to specific demos.
 * Add: Included step titles in the demo import process.

@@ -26,19 +26,31 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class Plugin {
 	/**
+	 * Plugin data cache.
+	 *
+	 * @var array|null
+	 * @since 2.0.0
+	 */
+	private $pluginData = null;
+
+	/**
 	 * Get the plugin meta data.
 	 *
 	 * @return array
 	 * @since 1.0.0
 	 */
 	public function data() {
-		return array_merge(
-			apply_filters(
-				'sd/edi/plugin_meta_data',
-				$this->getPluginMetaData()
-			),
-			$this->getOwnPluginData()
-		);
+		if ( null === $this->pluginData ) {
+			$this->pluginData = array_merge(
+				apply_filters(
+					'sd/edi/plugin_meta_data', // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+					$this->getPluginMetaData()
+				),
+				$this->getOwnPluginData()
+			);
+		}
+
+		return $this->pluginData;
 	}
 
 	/**
@@ -55,6 +67,8 @@ final class Plugin {
 			'plugin_active_file'  => plugin_basename( SD_EDI_ROOT_FILE ),
 			'demo_import_page'    => 'sd-easy-demo-importer',
 			'system_status_page'  => admin_url( 'themes.php?page=sd-easy-demo-importer#/system_status_page' ),
+			'import_log_page'     => admin_url( 'themes.php?page=sd-easy-demo-importer#/import_log' ),
+			'regen_thumbs_page'   => admin_url( 'themes.php?page=sd-easy-demo-importer#/regenerate_thumbnails' ),
 			'views_folder'        => 'views',
 			'template_folder'     => 'templates',
 			'ext_template_folder' => 'sd-edi-templates',

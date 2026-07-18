@@ -77,7 +77,7 @@ class ImportWidgets extends ImporterAjax {
 			 *
 			 * @since 1.1.5
 			 */
-			do_action( 'sd/edi/before_widgets_import', $widgetsFilePath );
+			do_action( 'sd/edi/before_widgets_import', $widgetsFilePath ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 
 			// Import widgets data.
 			ob_start();
@@ -91,20 +91,43 @@ class ImportWidgets extends ImporterAjax {
 			 *
 			 * @since 1.1.5
 			 */
-			do_action( 'sd/edi/after_widgets_import', $widgetsFilePath );
+			do_action( 'sd/edi/after_widgets_import', $widgetsFilePath ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 		}
 
 		$slider           = $this->multiple ?
 			Helpers::getDemoData( $this->config['demoData'][ $this->demoSlug ], 'revSliderZip' ) :
 			Helpers::getDemoData( $this->config, 'revSliderZip' );
 		$sliderFileExists = file_exists( $this->demoUploadDir( $this->demoDir() ) . '/' . $slider . '.zip' );
-		$hasSlider        = $slider && $sliderFileExists;
+		$hasRevSlider     = $slider && $sliderFileExists;
 
-		// Response.
+		$layerSlider    = basename(
+			$this->multiple ?
+			Helpers::getDemoData( $this->config['demoData'][ $this->demoSlug ], 'layerSliderZip' ) :
+			Helpers::getDemoData( $this->config, 'layerSliderZip' )
+		);
+		$hasLayerSlider = $layerSlider && file_exists( $this->demoUploadDir( $this->demoDir() ) . '/' . $layerSlider . '.zip' );
+
+		if ( $hasRevSlider ) {
+			$nextPhase   = 'sd_edi_import_rev_slider';
+			$nextMessage = esc_html__( 'Importing Slider Revolution slides.', 'easy-demo-importer' );
+		} elseif ( $hasLayerSlider ) {
+			$nextPhase   = 'sd_edi_import_layer_slider';
+			$nextMessage = esc_html__( 'Importing LayerSlider layouts.', 'easy-demo-importer' );
+		} else {
+			$nextPhase   = 'sd_edi_finalize_demo';
+			$nextMessage = esc_html__( 'Finalizing demo data import.', 'easy-demo-importer' );
+		}
+
+		// Response. Friendlier text in the modal; the log keeps the neutral
+		// equivalent.
 		$this->prepareResponse(
-			$hasSlider ? 'sd_edi_import_rev_slider' : 'sd_edi_finalize_demo',
-			$hasSlider ? esc_html__( 'Importing Slider Revolution Slides.', 'easy-demo-importer' ) : esc_html__( 'Finalizing demo data import.', 'easy-demo-importer' ),
-			$fileExists ? esc_html__( 'Widgets successfully imported.', 'easy-demo-importer' ) : esc_html__( 'No widgets import needed.', 'easy-demo-importer' )
+			$nextPhase,
+			$nextMessage,
+			$fileExists ? esc_html__( 'Widgets imported!', 'easy-demo-importer' ) : esc_html__( 'No widgets import needed.', 'easy-demo-importer' ),
+			false,
+			'',
+			'',
+			$fileExists ? esc_html__( 'Widgets imported.', 'easy-demo-importer' ) : null
 		);
 	}
 }

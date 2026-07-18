@@ -33,6 +33,19 @@ class SD_EDI_WP_Import extends WP_Importer {
 	public $id;
 
 	/**
+	 * Optional structured log sink.
+	 *
+	 * When set to a callable, per-item notices are reported through it as
+	 * ( string $message, string $level ) instead of being printed as HTML for a
+	 * caller to capture and re-parse. Left null, the importer prints exactly as
+	 * before, so it still works as a standalone WXR importer.
+	 *
+	 * @var callable|null
+	 * @since 2.0.0
+	 */
+	public $log_callback = null;
+
+	/**
 	 * Version
 	 *
 	 * @var int
@@ -161,6 +174,39 @@ class SD_EDI_WP_Import extends WP_Importer {
 	public $fetch_attachments = false;
 
 	/**
+	 * Absolute path to the demo package's bundled `uploads/` folder, when the
+	 * package shipped its media on disk. Empty disables bundled-media mode and
+	 * every attachment is fetched over HTTP as before. Persisted across chunked
+	 * batches via ChunkedImport::MUTABLE_PROPS.
+	 *
+	 * @var string
+	 * @since 2.0.0
+	 */
+	public $bundled_media_dir = '';
+
+	/**
+	 * Count of attachments installed from the bundled `uploads/` folder (rather
+	 * than fetched remotely). Persisted across batches and surfaced in the
+	 * activity log.
+	 *
+	 * @var int
+	 * @since 2.0.0
+	 */
+	public $bundled_media_imported = 0;
+
+	/**
+	 * Attachments whose download failed during import — each is
+	 * ['url' => source URL, 'data' => the slashed attachment post array] so the
+	 * retry-failed-media flow can re-attempt exactly those, without an attachment
+	 * having been created (a failed fetch never inserts one). Persisted across
+	 * chunked batches via ChunkedImport::MUTABLE_PROPS.
+	 *
+	 * @var array
+	 * @since 2.0.0
+	 */
+	public $failed_attachments = [];
+
+	/**
 	 * URL Remap
 	 *
 	 * @var array
@@ -215,15 +261,17 @@ class SD_EDI_WP_Import extends WP_Importer {
 	 */
 	public function import_start( $file ) {
 		if ( ! is_file( $file ) ) {
-			echo '<p><strong>' . esc_html__( 'Sorry, there has been an error.', 'easy-demo-importer' ) . '</strong><br />';
-			echo esc_html__( 'The file does not exist, please try again.', 'easy-demo-importer' ) . '</p>';
+			$this->report(
+				esc_html__( 'Sorry, there has been an error.', 'easy-demo-importer' ) . ' ' . esc_html__( 'The file does not exist, please try again.', 'easy-demo-importer' ),
+				'error'
+			);
 			die();
 		}
 
 		$import_data = $this->parse( $file );
 
 		if ( is_wp_error( $import_data ) ) {
-			echo '<p><strong>' . esc_html__( 'Sorry, there has been an error.', 'easy-demo-importer' ) . '</strong><br />';
+			$this->report( esc_html__( 'Sorry, there has been an error.', 'easy-demo-importer' ), 'error' );
 			die();
 		}
 
@@ -238,7 +286,7 @@ class SD_EDI_WP_Import extends WP_Importer {
 		wp_defer_term_counting( true );
 		wp_defer_comment_counting( true );
 
-		do_action( 'import_start' );
+		do_action( 'import_start' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 	}
 
 	/**
@@ -259,10 +307,41 @@ class SD_EDI_WP_Import extends WP_Importer {
 		wp_defer_term_counting( false );
 		wp_defer_comment_counting( false );
 
-		echo '<p>' . esc_html__( 'All done.', 'easy-demo-importer' ) . ' <a href="' . esc_url( admin_url() ) . '">' . esc_html__( 'Have fun!', 'easy-demo-importer' ) . '</a></p>';
-		echo '<p>' . esc_html__( 'Remember to update the passwords and roles of imported users.', 'easy-demo-importer' ) . '</p>';
+		// Standalone completion notice only; when a log sink is attached the caller
+		// records its own success entry, so this UI-only markup is skipped.
+		if ( ! is_callable( $this->log_callback ) ) {
+			echo '<p>' . esc_html__( 'All done.', 'easy-demo-importer' ) . ' <a href="' . esc_url( admin_url() ) . '">' . esc_html__( 'Have fun!', 'easy-demo-importer' ) . '</a></p>';
+			echo '<p>' . esc_html__( 'Remember to update the passwords and roles of imported users.', 'easy-demo-importer' ) . '</p>';
+		}
 
-		do_action( 'import_end' );
+		do_action( 'import_end' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+	}
+
+	/**
+	 * Reports a per-item notice.
+	 *
+	 * Routes the message to the structured log sink when one is attached (see
+	 * $log_callback), so the caller records an explicit ( message, level ) pair
+	 * instead of capturing printed HTML and guessing the severity back out of it.
+	 * With no sink the message is printed as before, keeping this class usable as
+	 * a standalone WXR importer.
+	 *
+	 * @param string $message Already-escaped, human-readable notice.
+	 * @param string $level   One of info|success|warning|error.
+	 *
+	 * @return void
+	 * @since 2.0.0
+	 */
+	protected function report( $message, $level = 'warning' ) {
+		if ( is_callable( $this->log_callback ) ) {
+			call_user_func( $this->log_callback, (string) $message, (string) $level );
+
+			return;
+		}
+
+		// Callers pass strings already escaped with esc_html__()/esc_html(); the
+		// sink path above is the one the plugin uses, this is the standalone fallback.
+		echo $message . '<br />'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 	}
 
 	/**
@@ -285,9 +364,14 @@ class SD_EDI_WP_Import extends WP_Importer {
 				$login = sanitize_user( $post['post_author'], true );
 
 				if ( empty( $login ) ) {
-					/* translators: Post Author */
-					printf( esc_html__( 'Failed to import author %s. Their posts will be attributed to the current user.', 'easy-demo-importer' ), esc_html( $post['post_author'] ) );
-					echo '<br />';
+					$this->report(
+						sprintf(
+							/* translators: Post Author */
+							esc_html__( 'Failed to import author %s. Their posts will be attributed to the current user.', 'easy-demo-importer' ),
+							esc_html( $post['post_author'] )
+						),
+						'warning'
+					);
 					continue;
 				}
 
@@ -348,10 +432,14 @@ class SD_EDI_WP_Import extends WP_Importer {
 					$this->processed_terms[ intval( $cat['term_id'] ) ] = $id;
 				}
 			} else {
-				/* translators: Category Name */
-				printf( esc_html__( 'Failed to import category %s', 'easy-demo-importer' ), esc_html( $cat['category_nicename'] ) );
-
-				echo '<br />';
+				$this->report(
+					sprintf(
+						/* translators: Category Name */
+						esc_html__( 'Failed to import category %s', 'easy-demo-importer' ),
+						esc_html( $cat['category_nicename'] )
+					),
+					'warning'
+				);
 				continue;
 			}
 
@@ -404,10 +492,14 @@ class SD_EDI_WP_Import extends WP_Importer {
 					$this->processed_terms[ intval( $tag['term_id'] ) ] = $id['term_id'];
 				}
 			} else {
-				/* translators: Tag Name */
-				printf( esc_html__( 'Failed to import post tag %s', 'easy-demo-importer' ), esc_html( $tag['tag_name'] ) );
-
-				echo '<br />';
+				$this->report(
+					sprintf(
+						/* translators: Tag Name */
+						esc_html__( 'Failed to import post tag %s', 'easy-demo-importer' ),
+						esc_html( $tag['tag_name'] )
+					),
+					'warning'
+				);
 				continue;
 			}
 
@@ -505,10 +597,15 @@ class SD_EDI_WP_Import extends WP_Importer {
 					$this->processed_terms[ intval( $term['term_id'] ) ] = $id['term_id'];
 				}
 			} else {
-				/* translators: 1. Term Taxonomy, 2. Term Name */
-				printf( esc_html__( 'Failed to import %1$s %2$s', 'easy-demo-importer' ), esc_html( $term['term_taxonomy'] ), esc_html( $term['term_name'] ) );
-
-				echo '<br />';
+				$this->report(
+					sprintf(
+						/* translators: 1. Term Taxonomy, 2. Term Name */
+						esc_html__( 'Failed to import %1$s %2$s', 'easy-demo-importer' ),
+						esc_html( $term['term_taxonomy'] ),
+						esc_html( $term['term_name'] )
+					),
+					'warning'
+				);
 				continue;
 			}
 
@@ -557,7 +654,7 @@ class SD_EDI_WP_Import extends WP_Importer {
 			 *
 			 * @since 0.6.2
 			 */
-			$key = apply_filters( 'import_term_meta_key', $meta['key'], $term_id, $term );
+			$key = apply_filters( 'import_term_meta_key', $meta['key'], $term_id, $term ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 			if ( ! $key ) {
 				continue;
 			}
@@ -576,7 +673,7 @@ class SD_EDI_WP_Import extends WP_Importer {
 			 *
 			 * @since 0.6.2
 			 */
-			do_action( 'import_term_meta', $term_id, $key, $value );
+			do_action( 'import_term_meta', $term_id, $key, $value ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 		}
 	}
 
@@ -591,20 +688,29 @@ class SD_EDI_WP_Import extends WP_Importer {
 	 * @return void
 	 * @since 1.0.0
 	 */
-	public function process_posts() {
+	public function process_posts( $offset = 0, $limit = 0 ) {
 		$this->posts = apply_filters( 'wp_import_posts', $this->posts );
 
-		foreach ( $this->posts as $post ) {
+		// Chunked import: operate on a slice so the post loop can resume across
+		// separate requests. $limit === 0 preserves the original single-shot
+		// behavior exactly (process every post, in order).
+		$posts = ( $limit > 0 )
+			? array_slice( $this->posts, $offset, $limit, true )
+			: $this->posts;
+
+		foreach ( $posts as $post ) {
 			$post = apply_filters( 'wp_import_post_data_raw', $post );
 
 			if ( ! post_type_exists( $post['post_type'] ) ) {
-				printf(
-					/* translators: 1. Post Title, 2. Post Type */
-					esc_html__( 'Failed to import &#8220;%1$s&#8221;: Invalid post type %2$s', 'easy-demo-importer' ),
-					esc_html( $post['post_title'] ),
-					esc_html( $post['post_type'] )
+				$this->report(
+					sprintf(
+						/* translators: 1. Post Title, 2. Post Type */
+						esc_html__( 'Failed to import &#8220;%1$s&#8221;: Invalid post type %2$s', 'easy-demo-importer' ),
+						esc_html( $post['post_title'] ),
+						esc_html( $post['post_type'] )
+					),
+					'warning'
 				);
-				echo '<br />';
 				do_action( 'wp_import_post_exists', $post );
 				continue;
 			}
@@ -649,9 +755,15 @@ class SD_EDI_WP_Import extends WP_Importer {
 			$post_exists = apply_filters( 'wp_import_existing_post', $post_exists, $post );
 
 			if ( $post_exists && get_post_type( $post_exists ) == $post['post_type'] ) {
-				/* translators: 1. Singular Name, 2. Post Title */
-				printf( esc_html__( '%1$s &#8220;%2$s&#8221; already exists.', 'easy-demo-importer' ), esc_html( $post_type_object->labels->singular_name ), esc_html( $post['post_title'] ) );
-				echo '<br />';
+				$this->report(
+					sprintf(
+						/* translators: 1. Singular Name, 2. Post Title */
+						esc_html__( '%1$s &#8220;%2$s&#8221; already exists.', 'easy-demo-importer' ),
+						esc_html( $post_type_object->labels->singular_name ),
+						esc_html( $post['post_title'] )
+					),
+					'info'
+				);
 				$comment_post_id = $post_exists;
 				$post_id         = $post_exists;
 				$this->processed_posts[ intval( $post['post_id'] ) ] = intval( $post_exists );
@@ -727,13 +839,49 @@ class SD_EDI_WP_Import extends WP_Importer {
 				}
 
 				if ( is_wp_error( $post_id ) ) {
-					printf(
-						/* translators: 1. Singular Name, 2. Post Title */
-						esc_html__( 'Failed to import %1$s &#8220;%2$s&#8221;', 'easy-demo-importer' ),
-						esc_html( $post_type_object->labels->singular_name ),
-						esc_html( $post['post_title'] )
+					// Images were intentionally disabled for this import, so the
+					// attachment was skipped, not failed. Log it as a skip and move
+					// on. Divergence from the vendored importer — keep it minimal
+					// for future upstream syncs.
+					if ( 'attachment_fetch_disabled' === $post_id->get_error_code() ) {
+						$this->report(
+							sprintf(
+								/* translators: 1. Singular Name, 2. Post Title */
+								esc_html__( 'Skipped %1$s &#8220;%2$s&#8221;: image import is turned off.', 'easy-demo-importer' ),
+								esc_html( $post_type_object->labels->singular_name ),
+								esc_html( $post['post_title'] )
+							),
+							'info'
+						);
+						continue;
+					}
+
+					// Record a failed attachment download so it can be retried later
+					// without re-running the whole import. A failed fetch never
+					// created an attachment, so we keep the source URL + the post
+					// data needed to re-attempt exactly this one. Divergence from the
+					// vendored importer — keep it minimal for future upstream syncs.
+					if ( 'attachment' === $postdata['post_type'] && $this->fetch_attachments && ! empty( $remote_url ) ) {
+						$this->failed_attachments[] = [
+							'url'  => $remote_url,
+							'data' => $postdata,
+						];
+					}
+
+					// Include the WP_Error reason (e.g. a failed image download) so the
+					// plugin's activity log can surface *why* the item was skipped, not
+					// just that it was. Divergence from the vendored importer — keep it
+					// minimal for future upstream syncs.
+					$this->report(
+						sprintf(
+							/* translators: 1. Singular Name, 2. Post Title, 3. Error reason */
+							esc_html__( 'Failed to import %1$s &#8220;%2$s&#8221;: %3$s', 'easy-demo-importer' ),
+							esc_html( $post_type_object->labels->singular_name ),
+							esc_html( $post['post_title'] ),
+							esc_html( $post_id->get_error_message() )
+						),
+						'warning'
 					);
-					echo '<br />';
 					continue;
 				}
 
@@ -768,10 +916,15 @@ class SD_EDI_WP_Import extends WP_Importer {
 							$term_id = $t['term_id'];
 							do_action( 'wp_import_insert_term', $t, $term, $post_id, $post );
 						} else {
-							/* translators: 1. Taxonomy, 2. Name */
-							printf( esc_html__( 'Failed to import %1$s %2$s', 'easy-demo-importer' ), esc_html( $taxonomy ), esc_html( $term['name'] ) );
-
-							echo '<br />';
+							$this->report(
+								sprintf(
+									/* translators: 1. Taxonomy, 2. Name */
+									esc_html__( 'Failed to import %1$s %2$s', 'easy-demo-importer' ),
+									esc_html( $taxonomy ),
+									esc_html( $term['name'] )
+								),
+								'warning'
+							);
 							do_action( 'wp_import_insert_term_failed', $t, $term, $post_id, $post );
 							continue;
 						}
@@ -849,10 +1002,10 @@ class SD_EDI_WP_Import extends WP_Importer {
 
 			$post['postmeta'] = apply_filters( 'wp_import_post_meta', $post['postmeta'], $post_id, $post );
 
-			// Add/update post meta.
+			// Add/update post-meta.
 			if ( ! empty( $post['postmeta'] ) ) {
 				foreach ( $post['postmeta'] as $meta ) {
-					$key   = apply_filters( 'import_post_meta_key', $meta['key'], $post_id, $post );
+					$key   = apply_filters( 'import_post_meta_key', $meta['key'], $post_id, $post ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 					$value = false;
 
 					if ( '_edit_last' == $key ) {
@@ -871,9 +1024,9 @@ class SD_EDI_WP_Import extends WP_Importer {
 
 						add_post_meta( $post_id, wp_slash( $key ), sd_edi()->slash_strings_only( $value ) );
 
-						do_action( 'import_post_meta', $post_id, $key, $value );
+						do_action( 'import_post_meta', $post_id, $key, $value ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 
-						// if the post has a featured image, take note of this in case of remap.
+						// if the post has a featured image, take note of this in case of remapping.
 						if ( '_thumbnail_id' == $key ) {
 							$this->featured_images[ $post_id ] = (int) $value;
 						}
@@ -882,7 +1035,12 @@ class SD_EDI_WP_Import extends WP_Importer {
 			}
 		}
 
-		unset( $this->posts );
+		// Only release the parsed posts in single-shot mode. Chunked mode needs
+		// them preserved across batches (state is re-hydrated each request), and
+		// releases them when the session state file is deleted in finalize().
+		if ( 0 === $limit ) {
+			unset( $this->posts );
+		}
 	}
 
 	/**
@@ -905,12 +1063,14 @@ class SD_EDI_WP_Import extends WP_Importer {
 		}
 
 		$menu_slug = false;
+		$menu_name = '';
 
 		if ( isset( $item['terms'] ) ) {
 			// loop through terms, assume first nav_menu term is correct menu.
 			foreach ( $item['terms'] as $term ) {
 				if ( 'nav_menu' == $term['domain'] ) {
 					$menu_slug = $term['slug'];
+					$menu_name = ! empty( $term['name'] ) ? $term['name'] : $term['slug'];
 					break;
 				}
 			}
@@ -918,8 +1078,7 @@ class SD_EDI_WP_Import extends WP_Importer {
 
 		// no nav_menu term associated with this menu item.
 		if ( ! $menu_slug ) {
-			esc_html_e( 'Menu item skipped due to missing menu slug', 'easy-demo-importer' );
-			echo '<br />';
+			$this->report( esc_html__( 'Menu item skipped due to missing menu slug', 'easy-demo-importer' ), 'warning' );
 
 			return;
 		}
@@ -927,11 +1086,29 @@ class SD_EDI_WP_Import extends WP_Importer {
 		$menu_id = term_exists( $menu_slug, 'nav_menu' );
 
 		if ( ! $menu_id ) {
-			/* translators: Menu Slug */
-			printf( esc_html__( 'Menu item skipped due to invalid menu slug: %s', 'easy-demo-importer' ), esc_html( $menu_slug ) );
-			echo '<br />';
+			// The bundled WXR references menus by their nav_menu category but does
+			// not always export the matching <wp:term> definitions, so the menu
+			// term may not exist yet. Upstream (and the original vendored copy)
+			// drops every item in that case, leaving the menu empty. Create the
+			// menu instead — by its display name, so the derived slug still matches
+			// $menu_slug and later items resolve to the same menu. Divergence from
+			// the vendored importer — keep it minimal for future upstream syncs.
+			$created = wp_create_nav_menu( '' !== $menu_name ? $menu_name : $menu_slug );
 
-			return;
+			if ( is_wp_error( $created ) ) {
+				$this->report(
+					sprintf(
+						/* translators: Menu Slug */
+						esc_html__( 'Menu item skipped due to invalid menu slug: %s', 'easy-demo-importer' ),
+						esc_html( $menu_slug )
+					),
+					'warning'
+				);
+
+				return;
+			}
+
+			$menu_id = (int) $created;
 		} else {
 			$menu_id = is_array( $menu_id ) ? $menu_id['term_id'] : $menu_id;
 		}
@@ -1021,8 +1198,11 @@ class SD_EDI_WP_Import extends WP_Importer {
 	 */
 	public function process_attachment( $post, $url ) {
 		if ( ! $this->fetch_attachments ) {
+			// A distinct code so the caller can log this as an intentional skip
+			// (images disabled) rather than a failure. Divergence from the
+			// vendored importer — keep it minimal for future upstream syncs.
 			return new WP_Error(
-				'attachment_processing_error',
+				'attachment_fetch_disabled',
 				esc_html__( 'Fetching attachments is not enabled', 'easy-demo-importer' )
 			);
 		}
@@ -1030,6 +1210,28 @@ class SD_EDI_WP_Import extends WP_Importer {
 		// if the URL is absolute, but does not contain address, then upload it assuming base_site_url.
 		if ( preg_match( '|^/[\w\W]+$|', $url ) ) {
 			$url = rtrim( $this->base_url, '/' ) . $url;
+		}
+
+		// The chunked importer persists its cursor only at batch end, so a request
+		// killed mid-batch (e.g. a tar-pitted image overran the FPM limit) replays
+		// the slice. post_exists() dedups posts but NOT attachments, so re-import
+		// this exact source and it duplicates. Reuse the attachment a prior run
+		// already created instead. Divergence from the vendored importer — keep it
+		// minimal for future upstream syncs.
+		$existing = $this->existing_source_attachment( $url );
+
+		if ( $existing ) {
+			$new_url = wp_get_attachment_url( $existing );
+
+			if ( $new_url ) {
+				$this->url_remap[ $url ] = $new_url;
+
+				if ( ! empty( $post['guid'] ) ) {
+					$this->url_remap[ $post['guid'] ] = $new_url;
+				}
+			}
+
+			return $existing;
 		}
 
 		$upload = $this->fetch_remote_file( $url, $post );
@@ -1048,6 +1250,13 @@ class SD_EDI_WP_Import extends WP_Importer {
 
 		// as per wp-admin/includes/upload.php.
 		$post_id = wp_insert_attachment( $post, $upload['file'] );
+
+		if ( $post_id && ! is_wp_error( $post_id ) ) {
+			// Tag the source URL so a replayed batch detects and reuses this exact
+			// attachment (see existing_source_attachment()) instead of duplicating.
+			update_post_meta( $post_id, '_sd_edi_source_url', $url );
+		}
+
 		wp_update_attachment_metadata( $post_id, wp_generate_attachment_metadata( $post_id, $upload['file'] ) );
 
 		// remap resized image URLs, works by stripping the extension and remapping the URL stub.
@@ -1065,6 +1274,34 @@ class SD_EDI_WP_Import extends WP_Importer {
 	}
 
 	/**
+	 * Finds an attachment previously imported from the same source URL.
+	 *
+	 * Used to keep attachment creation idempotent across a chunked-import replay:
+	 * process_attachment() tags each new attachment with its `_sd_edi_source_url`,
+	 * so a re-processed slice reuses the existing attachment instead of inserting
+	 * a duplicate. Divergence from the vendored importer — keep it minimal for
+	 * future upstream syncs.
+	 *
+	 * @param string $url Original attachment URL from the WXR.
+	 *
+	 * @return int Attachment ID, or 0 if none.
+	 * @since 2.0.0
+	 */
+	protected function existing_source_attachment( $url ) {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$id = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_sd_edi_source_url' AND meta_value = %s ORDER BY post_id DESC LIMIT 1",
+				$url
+			)
+		);
+
+		return ( $id > 0 && 'attachment' === get_post_type( $id ) ) ? $id : 0;
+	}
+
+	/**
 	 * Attempt to download a remote file attachment
 	 *
 	 * @param string $url URL of item to fetch.
@@ -1074,6 +1311,21 @@ class SD_EDI_WP_Import extends WP_Importer {
 	 * @since 1.0.0
 	 */
 	public function fetch_remote_file( $url, $post ) {
+		// Bundled-media short-circuit: when the demo package shipped this file on
+		// disk, install it from the local copy instead of fetching over HTTP —
+		// Cloudflare-proof and far faster. Falls through to the remote fetch below
+		// when the file is not bundled or the local copy fails. Divergence from the
+		// vendored importer — kept minimal for future upstream syncs.
+		$bundled_file = $this->resolve_bundled_media( $url );
+
+		if ( $bundled_file ) {
+			$local = $this->import_local_file( $bundled_file, $url, $post );
+
+			if ( ! is_wp_error( $local ) ) {
+				return $local;
+			}
+		}
+
 		// Extract the file name from the URL.
 		$path      = wp_parse_url( $url, PHP_URL_PATH );
 		$file_name = '';
@@ -1092,17 +1344,41 @@ class SD_EDI_WP_Import extends WP_Importer {
 		}
 
 		// Fetch the remote URL and write it to the placeholder file.
-		$remote_response = wp_safe_remote_get(
-			$url,
+		//
+		// Some demo-image hosts run bot-mitigation (e.g. Cloudflare) that rejects
+		// WordPress's default HTTP client signature with a 418/403 even though the
+		// same image loads fine in a browser. The user-agent and Referer (set to
+		// the WXR's own base_url — genuinely where these images were referenced
+		// from) are filterable so a theme author whose host does this can adjust
+		// them without patching the importer. Divergence from the vendored
+		// importer — keep it minimal for future upstream syncs.
+		$request_args = apply_filters(
+			'sd/edi/importer/attachment_request_args', // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 			[
-				'timeout'  => 300,
-				'stream'   => true,
-				'filename' => $tmp_file_name,
-				'headers'  => [
+				// A blocked/tarpitted image (e.g. behind a Cloudflare challenge)
+				// can hold the connection open until this timeout. A chunked batch
+				// cannot interrupt a blocking wp_safe_remote_get(), so a long
+				// timeout lets one bad image run the whole request past the
+				// reverse-proxy / FPM wall-clock limit and abort the import. Keep it
+				// short so a bad image fails fast and the import skips it and moves
+				// on. Filterable for hosts that legitimately serve large media.
+				'timeout'    => (int) apply_filters( 'sd/edi/importer/attachment_timeout', 40 ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+				'stream'     => true,
+				'filename'   => $tmp_file_name,
+				'user-agent' => apply_filters(
+					'sd/edi/importer/attachment_user_agent', // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+					'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+				),
+				'headers'    => [
 					'Accept-Encoding' => 'identity',
+					'Referer'         => apply_filters( 'sd/edi/importer/attachment_referer', $this->base_url ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 				],
-			]
+			],
+			$url,
+			$post
 		);
+
+		$remote_response = wp_safe_remote_get( $url, $request_args );
 
 		if ( is_wp_error( $remote_response ) ) {
 			@unlink( $tmp_file_name ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
@@ -1247,6 +1523,119 @@ class SD_EDI_WP_Import extends WP_Importer {
 	}
 
 	/**
+	 * Resolve an attachment URL to a bundled file on disk, if present.
+	 *
+	 * Uses the pure URL→path mapping in BundledMedia to build uploads-relative
+	 * candidates, then returns the first that exists under $bundled_media_dir.
+	 * Filterable via 'sd/edi/importer/bundled_media_path' so a theme author can
+	 * override resolution (e.g. a basename fallback) for edge cases.
+	 *
+	 * @param string $url Attachment URL from the WXR file.
+	 *
+	 * @return string|null Absolute path to the bundled file, or null.
+	 * @since 2.0.0
+	 */
+	public function resolve_bundled_media( $url ) {
+		if ( empty( $this->bundled_media_dir ) || ! is_dir( $this->bundled_media_dir ) ) {
+			return null;
+		}
+
+		$base  = trailingslashit( $this->bundled_media_dir );
+		$found = null;
+
+		foreach ( \SigmaDevs\EasyDemoImporter\Common\Importer\BundledMedia::candidates( $url ) as $relative ) {
+			$candidate = $base . $relative;
+
+			if ( is_file( $candidate ) ) {
+				$found = $candidate;
+				break;
+			}
+		}
+
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+		return apply_filters( 'sd/edi/importer/bundled_media_path', $found, $url, $this->bundled_media_dir );
+	}
+
+	/**
+	 * Install a bundled file into the uploads directory.
+	 *
+	 * Mirrors the success contract of fetch_remote_file() — copies the file into
+	 * WP's uploads dir, returns the same ['file','url','type','error'] shape, and
+	 * records the old→new URL remaps so post content is rewritten to the local
+	 * URL. No HTTP, no timeout, no bot challenge.
+	 *
+	 * @param string $source Absolute path to the bundled file.
+	 * @param string $url    Original attachment URL (for URL remapping).
+	 * @param array  $post   Attachment details.
+	 *
+	 * @return array|WP_Error Upload details on success, WP_Error otherwise.
+	 * @since 2.0.0
+	 */
+	public function import_local_file( $source, $url, $post ) {
+		if ( ! is_file( $source ) ) {
+			return new WP_Error( 'import_file_error', esc_html__( 'Bundled media file not found.', 'easy-demo-importer' ) );
+		}
+
+		// A demo package is third-party content, so never copy a file WordPress
+		// itself would refuse into the (web-served) uploads directory. Gate on the
+		// site's own allowed mime types BEFORE the copy — this blocks a shipped
+		// `evil.php` referenced by the WXR, while still permitting whatever media
+		// types the site allows (SVG only if the site explicitly enables it).
+		$filetype = wp_check_filetype( wp_basename( $source ), null );
+
+		if ( empty( $filetype['type'] ) ) {
+			return new WP_Error(
+				'import_file_type_error',
+				esc_html__( 'Bundled media has a disallowed file type and was skipped.', 'easy-demo-importer' )
+			);
+		}
+
+		$upload_date = isset( $post['upload_date'] ) ? $post['upload_date'] : null;
+		$uploads     = wp_upload_dir( $upload_date );
+
+		if ( ! ( $uploads && false === $uploads['error'] ) ) {
+			return new WP_Error( 'upload_dir_error', $uploads['error'] );
+		}
+
+		$file_name = wp_unique_filename( $uploads['path'], wp_basename( $source ) );
+		$new_file  = $uploads['path'] . "/$file_name";
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_copy
+		if ( ! copy( $source, $new_file ) ) {
+			return new WP_Error( 'import_file_error', esc_html__( 'The bundled file could not be copied into the uploads directory.', 'easy-demo-importer' ) );
+		}
+
+		// Match the surrounding uploads' permissions, as fetch_remote_file() does.
+		// Guard the stat(): if it fails (dir race / open_basedir) we must NOT fall
+		// through to chmod( $new_file, 0 ), which would strip all permissions and
+		// make the just-copied media unreadable by the web server.
+		$stat = stat( dirname( $new_file ) );
+
+		if ( false !== $stat ) {
+			$perms = $stat['mode'] & 0000666;
+			chmod( $new_file, $perms ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod
+		}
+
+		$upload = [
+			'file'  => $new_file,
+			'url'   => $uploads['url'] . "/$file_name",
+			'type'  => $filetype['type'],
+			'error' => false,
+		];
+
+		// Keep track of the old and new URLs so we can substitute them later.
+		$this->url_remap[ $url ] = $upload['url'];
+
+		if ( ! empty( $post['guid'] ) ) {
+			$this->url_remap[ $post['guid'] ] = $upload['url'];
+		}
+
+		++$this->bundled_media_imported;
+
+		return $upload;
+	}
+
+	/**
 	 * Attempt to associate posts and menu items with previously missing parents
 	 *
 	 * An imported post's parent may not have been imported when it was first created
@@ -1316,14 +1705,48 @@ class SD_EDI_WP_Import extends WP_Importer {
 		// make sure we do the longest urls first, in case one is a substring of another.
 		uksort( $this->url_remap, [ &$this, 'cmpr_strlen' ] );
 
+		// Drop identity remaps (from === to): they rewrite nothing, so there is no
+		// point scanning the table for them.
+		$remap = [];
 		foreach ( $this->url_remap as $from_url => $to_url ) {
+			if ( (string) $from_url !== (string) $to_url ) {
+				$remap[ $from_url ] = $to_url;
+			}
+		}
+
+		if ( empty( $remap ) ) {
+			return;
+		}
+
+		// The original importer issued one full-table UPDATE...REPLACE per URL —
+		// two scans (posts.post_content + enclosure postmeta) for every mapped
+		// attachment, i.e. O(attachments × rows). Instead fold a batch of URLs
+		// into a single nested REPLACE(REPLACE(col, f1, t1), f2, t2)... so each
+		// table is scanned once per batch. uksort ordered the map longest-first;
+		// wrapping in that order puts the longest URL innermost (applied first),
+		// preserving the substring-safety guarantee. Batched so the statement
+		// stays well under max_allowed_packet on very large imports.
+		$batch_size = max( 1, (int) apply_filters( 'sd/edi/url_backfill_batch_size', 100 ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+
+		foreach ( array_chunk( $remap, $batch_size, true ) as $batch ) {
+			$content_expr = 'post_content';
+			$enclose_expr = 'meta_value';
+			$args         = [];
+
+			foreach ( $batch as $from_url => $to_url ) {
+				$content_expr = "REPLACE($content_expr, %s, %s)";
+				$enclose_expr = "REPLACE($enclose_expr, %s, %s)";
+				$args[]       = $from_url;
+				$args[]       = $to_url;
+			}
+
 			// remap urls in post_content.
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-			$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->posts} SET post_content = REPLACE(post_content, %s, %s)", $from_url, $to_url ) );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+			$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->posts} SET post_content = {$content_expr}", $args ) );
 
 			// remap enclosure urls.
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-			$result = $wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->postmeta} SET meta_value = REPLACE(meta_value, %s, %s) WHERE meta_key='enclosure'", $from_url, $to_url ) );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+			$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->postmeta} SET meta_value = {$enclose_expr} WHERE meta_key='enclosure'", $args ) );
 		}
 	}
 
@@ -1351,7 +1774,7 @@ class SD_EDI_WP_Import extends WP_Importer {
 	 *
 	 * @param string $file Path to WXR file for parsing.
 	 *
-	 * @return array Information gathered from the WXR file
+	 * @return array|\WP_Error Information gathered from the WXR file, or an error on failure.
 	 * @since 1.0.0
 	 */
 	public function parse( $file ) {
@@ -1386,7 +1809,7 @@ class SD_EDI_WP_Import extends WP_Importer {
 	 * @since 1.0.0
 	 */
 	public function max_attachment_size() {
-		return apply_filters( 'import_attachment_size_limit', 0 );
+		return apply_filters( 'import_attachment_size_limit', 0 ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 	}
 
 	/**
@@ -1521,7 +1944,7 @@ class SD_EDI_WP_Import extends WP_Importer {
 	 * @since 1.0.0
 	 */
 	protected function is_non_unique_post_type( $post_type ) {
-		$non_unique_post_types = apply_filters( 'sd/edi/importer/non_unique_post_types', [ 'rtcl_cf' ] );
+		$non_unique_post_types = apply_filters( 'sd/edi/importer/non_unique_post_types', [ 'rtcl_cf' ] ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 
 		return in_array( $post_type, $non_unique_post_types, true );
 	}

@@ -53,7 +53,7 @@ class Actions {
 	 */
 	public static function pluginActivationActions( $plugin_path ) {
 		$plugins = apply_filters(
-			'sd/edi/plugin_activation_actions',
+			'sd/edi/plugin_activation_actions', // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 			[
 				'woocommerce/woocommerce.php' => [
 					'class'  => '\WC_Install',
@@ -98,13 +98,12 @@ class Actions {
 	 * @since 1.1.1
 	 */
 	public static function beforeImportActions() {
-		// Try to update PHP memory limit before import.
-		// phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed, Squiz.PHP.DiscouragedFunctions.Discouraged
-		ini_set( 'memory_limit', apply_filters( 'sd/edi/temp_boost_memory_limit', '350M' ) );
+		// Try to raise the PHP memory limit before import.
+		self::raiseMemoryLimit();
 
 		// Try to increase PHP max execution time before import.
 		if ( ( strpos( ini_get( 'disable_functions' ), 'set_time_limit' ) === false ) && ini_get( 'max_execution_time' ) < 300 ) {
-			// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged
+			// phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged, WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 			set_time_limit( apply_filters( 'sd/edi/temp_boost_max_execution_time', 300 ) );
 		}
 
@@ -114,6 +113,49 @@ class Actions {
 		 * @since 1.1.5
 		 */
 		add_filter( 'big_image_size_threshold', '__return_false' );
+	}
+
+	/**
+	 * Raises the PHP memory limit for the current import request.
+	 *
+	 * Only ever raises. A plain ini_set() to a fixed target silently *lowers* the
+	 * limit on a site configured above it, and caps a site running unlimited
+	 * (memory_limit = -1) — starving the very imports that need the headroom
+	 * most. wp_raise_memory_limit() is not used here because it is bound to
+	 * WP_MAX_MEMORY_LIMIT and would ignore the long-standing
+	 * 'sd/edi/temp_boost_memory_limit' filter, which stays authoritative.
+	 *
+	 * Not restored afterwards: memory_limit is per-request, and PHP enforces it
+	 * at allocation time, so lowering it back mid-request while the import's
+	 * memory is still held would fatal on the next allocation.
+	 *
+	 * @return void
+	 * @since 2.0.0
+	 */
+	private static function raiseMemoryLimit() {
+		if ( ! wp_is_ini_value_changeable( 'memory_limit' ) ) {
+			return;
+		}
+
+		$current = wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) );
+
+		// Already unlimited — no target can add headroom to that.
+		if ( -1 === $current ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+		$target = apply_filters( 'sd/edi/temp_boost_memory_limit', '350M' );
+		$bytes  = wp_convert_hr_to_bytes( (string) $target );
+
+		// Keep the site's own limit when it already meets or beats the target.
+		// A target of -1 (filtered to unlimited) is always an increase.
+		if ( -1 !== $bytes && $bytes <= $current ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed, Squiz.PHP.DiscouragedFunctions.Discouraged -- guarded above to only ever raise the limit; see the method docblock for why wp_raise_memory_limit() does not fit here.
+		ini_set( 'memory_limit', $target );
 	}
 
 	/**
@@ -132,10 +174,10 @@ class Actions {
 			->replaceUrls( $obj )
 
 			// WooCommerce Actions.
-			->WooCommerceActions()
+			->woocommerceActions()
 
 			// Elementor Actions.
-			->ElementorActions( $obj )
+			->elementorActions( $obj )
 
 			// Update Permalinks.
 			->updatePermalinks()
@@ -230,7 +272,7 @@ class Actions {
 			$blogSlug = $obj->multiple ? $obj->config['demoData'][ $obj->demoSlug ]['blogSlug'] : $obj->config['blogSlug'];
 		}
 
-		// Setting up front page.
+		// Setting up a front page.
 		if ( $homeSlug ) {
 			$page = get_page_by_path( $homeSlug );
 
@@ -247,7 +289,7 @@ class Actions {
 			}
 		}
 
-		// Setting up blog page.
+		// Setting up a blog page.
 		if ( $blogSlug ) {
 			$blog = get_page_by_path( $blogSlug );
 
@@ -305,7 +347,7 @@ class Actions {
 		}
 
 		$tables = apply_filters(
-			'sd/edi/db_search/tables',
+			'sd/edi/db_search/tables', // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 			[
 				$wpdb->prefix . 'commentmeta',
 				$wpdb->prefix . 'comments',
@@ -419,7 +461,7 @@ class Actions {
 	}
 
 	/**
-	 * Replace GUIDs in WordPress posts table.
+	 * Replace GUIDs in the WordPress posts table.
 	 *
 	 * @param string $oldUrl The old URL to search for in GUIDs.
 	 * @param string $newUrl The new URL to replace with.
@@ -453,7 +495,7 @@ class Actions {
 	 * @return static
 	 * @since 1.1.0
 	 */
-	public static function WooCommerceActions() {
+	public static function woocommerceActions() {
 		if ( ! class_exists( 'WooCommerce' ) ) {
 			return new static();
 		}
@@ -638,7 +680,7 @@ class Actions {
 	 * @return static
 	 * @since 1.1.0
 	 */
-	public static function ElementorActions( $obj ) {
+	public static function elementorActions( $obj ) {
 		if ( ! defined( 'ELEMENTOR_PATH' ) ) {
 			return new static();
 		}
@@ -651,6 +693,13 @@ class Actions {
 
 			// Taxonomy mapping.
 			->elementorTaxonomyFix( $obj );
+
+		// Flush Elementor's compiled CSS so the freshly-imported kit and pages
+		// regenerate their files — otherwise global settings such as the container
+		// width are never written out and the front end falls back to defaults.
+		if ( class_exists( '\Elementor\Plugin' ) && isset( \Elementor\Plugin::$instance->files_manager ) ) {
+			\Elementor\Plugin::$instance->files_manager->clear_cache();
+		}
 
 		return new static();
 	}
@@ -696,6 +745,18 @@ class Actions {
 
 			// Update `elementor_active_kit` page.
 			if ( $pageId > 0 ) {
+				// Normalize the kit's document type. During a chunked import the
+				// kit post is inserted in a later request than the one that fired
+				// `import_start`, so Elementor's save_post guard does not apply and
+				// it stamps `_elementor_template_type = page`; the WXR value `kit`
+				// is then appended, leaving two values. Elementor reads the first
+				// (`page`) and treats the active kit as a Page — skipping its global
+				// CSS (container width, colors, fonts). Collapse it to a single
+				// `kit` so the kit renders its settings again.
+				delete_post_meta( $pageId, '_elementor_template_type' );
+				update_post_meta( $pageId, '_elementor_template_type', 'kit' );
+				update_post_meta( $pageId, '_elementor_edit_mode', 'builder' );
+
 				wp_update_post(
 					[
 						'ID'        => $pageId,
@@ -731,10 +792,12 @@ class Actions {
 			'elementor_library',
 		];
 
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 		$postTypesSupport = apply_filters( 'sd/edi/elementor_post_types_support', array_diff( array_merge( $defaultPostTypes, array_keys( $customPostTypes ) ), $excludedPostTypes ) );
 
 		update_option( 'elementor_cpt_support', $postTypesSupport );
 
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 		if ( ! apply_filters( 'sd/edi/disabled_elementor_options', false ) ) {
 			update_option( 'elementor_disable_color_schemes', 'yes' );
 			update_option( 'elementor_disable_typography_schemes', 'yes' );
@@ -849,7 +912,7 @@ class Actions {
 							}
 						}
 					} else {
-						// Not a repeater field. Process based on widget type.
+						// Not a repeater field. Process based on the widget type.
 						$isWPWidget
 							? self::replaceCategoryWP( $element, $catID )
 							: self::replaceCategory( $element, $catID );
