@@ -6,7 +6,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-07-18 11:33+0000\n"
+"POT-Creation-Date: 2026-07-19 18:42+0000\n"
 "Report-Msgid-Bugs-To: https://github.com/wp-sigmadevs/easy-demo-importer/issues\n"
 "X-Poedit-Basepath: ..\n"
 "X-Poedit-KeywordsList: __;_e;_ex:1,2c;_n:1,2;_n_noop:1,2;_nx:1,2,4c;_nx_noop:1,2,3c;_x:1,2c;esc_attr__;esc_attr_e;esc_attr_x:1,2c;esc_html__;esc_html_e;esc_html_x:1,2c\n"
@@ -627,11 +627,11 @@ msgid "Installed but inactive — update available"
 msgstr ""
 
 #: ../inc/App/Backend/Enqueue.php:359
-msgid "We recommend backing up your site before proceeding. A backup plugin can help you restore your site if anything goes wrong during the import."
+msgid "We recommend creating a restore point before you proceed — enable it on the next step to roll your site back if anything goes wrong. A separate backup plugin can add an extra layer of safety."
 msgstr ""
 
 #: ../inc/App/Backend/Enqueue.php:360
-msgid "This import will install all required plugins and bring in content, media, settings, customizer data, and widgets needed to replicate the demo site. Please review your existing content, as some data may be overwritten."
+msgid "This import installs the required plugins and brings in content, media, settings, customizer data, and widgets needed to replicate the demo site. On the next step you can choose what to import and whether to reset your existing database first. Please review your existing content, as some data may be overwritten."
 msgstr ""
 
 #: ../inc/App/Backend/Enqueue.php:364
@@ -1018,31 +1018,36 @@ msgstr ""
 msgid "Regeneration complete — %1$s regenerated, %2$s skipped, %3$s failed."
 msgstr ""
 
-#: ../inc/Common/Abstracts/ImporterAjax.php:159
+#. translators: 1: error message, 2: file, 3: line.
+#: ../inc/Common/Abstracts/ImporterAjax.php:214
+msgid "Import failed with a fatal error: %1$s (in %2$s on line %3$d)."
+msgstr ""
+
+#: ../inc/Common/Abstracts/ImporterAjax.php:236
 msgid "Security check failed. Please refresh the page and try again."
 msgstr ""
 
-#: ../inc/Common/Abstracts/ImporterAjax.php:160
+#: ../inc/Common/Abstracts/ImporterAjax.php:237
 msgid "This can happen if you stayed on the page too long. Refreshing resets the security token."
 msgstr ""
 
-#: ../inc/Common/Abstracts/ImporterAjax.php:177, ../inc/Common/Abstracts/ImporterAjax.php:184
+#: ../inc/Common/Abstracts/ImporterAjax.php:254, ../inc/Common/Abstracts/ImporterAjax.php:261
 msgid "Demo configuration is missing or empty."
 msgstr ""
 
-#: ../inc/Common/Abstracts/ImporterAjax.php:185
+#: ../inc/Common/Abstracts/ImporterAjax.php:262
 msgid "Make sure your theme is calling the sd/edi/importer/config filter and returning a valid configuration array."
 msgstr ""
 
-#: ../inc/Common/Abstracts/ImporterAjax.php:207, ../inc/Common/Abstracts/ImporterAjax.php:214
+#: ../inc/Common/Abstracts/ImporterAjax.php:284, ../inc/Common/Abstracts/ImporterAjax.php:291
 msgid "The import session is no longer valid."
 msgstr ""
 
-#: ../inc/Common/Abstracts/ImporterAjax.php:215
+#: ../inc/Common/Abstracts/ImporterAjax.php:292
 msgid "This can happen if the import timed out or another import started. Refresh the page and try again."
 msgstr ""
 
-#: ../inc/Common/Abstracts/ImporterAjax.php:284
+#: ../inc/Common/Abstracts/ImporterAjax.php:361
 msgid "Invalid demo selection."
 msgstr ""
 
@@ -1465,7 +1470,7 @@ msgstr ""
 msgid "Could not remove the temporary demo files; they can be deleted manually from uploads/easy-demo-importer."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportFluentForms.php:85, ../inc/App/Ajax/Backend/ImportSettings.php:189
+#: ../inc/App/Ajax/Backend/ImportFluentForms.php:85, ../inc/App/Ajax/Backend/ImportSettings.php:192
 msgid "Importing all widgets."
 msgstr ""
 
@@ -1481,7 +1486,7 @@ msgstr ""
 msgid "Fluent Forms imported."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportLayerSlider.php:78, ../inc/App/Ajax/Backend/ImportRevSlider.php:86, ../inc/App/Ajax/Backend/ImportWidgets.php:118
+#: ../inc/App/Ajax/Backend/ImportLayerSlider.php:78, ../inc/App/Ajax/Backend/ImportRevSlider.php:86, ../inc/App/Ajax/Backend/ImportWidgets.php:123
 msgid "Finalizing demo data import."
 msgstr ""
 
@@ -1513,7 +1518,7 @@ msgstr ""
 msgid "No navigation menus to import. Skipping."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportRevSlider.php:86, ../inc/App/Ajax/Backend/ImportWidgets.php:115
+#: ../inc/App/Ajax/Backend/ImportRevSlider.php:86, ../inc/App/Ajax/Backend/ImportWidgets.php:120
 msgid "Importing LayerSlider layouts."
 msgstr ""
 
@@ -1525,67 +1530,76 @@ msgstr ""
 msgid "Skipping Slider Revolution import."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportSettings.php:189
+#: ../inc/App/Ajax/Backend/ImportSettings.php:192
 msgid "Importing Fluent Forms."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportSettings.php:190
+#: ../inc/App/Ajax/Backend/ImportSettings.php:193
 msgid "Theme settings are all set!"
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportSettings.php:190
+#: ../inc/App/Ajax/Backend/ImportSettings.php:193
 msgid "No theme settings import needed."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportSettings.php:194
+#: ../inc/App/Ajax/Backend/ImportSettings.php:197
 msgid "Theme settings imported."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportWidgets.php:112
+#: ../inc/App/Ajax/Backend/ImportWidgets.php:117
 msgid "Importing Slider Revolution slides."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportWidgets.php:126
+#: ../inc/App/Ajax/Backend/ImportWidgets.php:131
 msgid "Widgets imported!"
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportWidgets.php:126
+#: ../inc/App/Ajax/Backend/ImportWidgets.php:131
 msgid "No widgets import needed."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/ImportWidgets.php:130
+#: ../inc/App/Ajax/Backend/ImportWidgets.php:135
 msgid "Widgets imported."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/Initialize.php:149
+#. translators: %d: HTTP status code.
+#: ../inc/App/Ajax/Backend/Initialize.php:107
+msgid "Import stopped: the server returned HTTP %d."
+msgstr ""
+
+#: ../inc/App/Ajax/Backend/Initialize.php:110
+msgid "Import stopped: the connection to the server was lost."
+msgstr ""
+
+#: ../inc/App/Ajax/Backend/Initialize.php:214
 msgid "Another import is already in progress."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/Initialize.php:150
+#: ../inc/App/Ajax/Backend/Initialize.php:215
 msgid "Wait for the current import to finish before starting a new one. If you believe the previous import has crashed, wait a couple of minutes for it to be released automatically, then try again."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/Initialize.php:177, ../inc/App/Ajax/Backend/InstallDemo.php:128
+#: ../inc/App/Ajax/Backend/Initialize.php:242, ../inc/App/Ajax/Backend/InstallDemo.php:136
 msgid "Restore point skipped — this site is too large to snapshot safely; the import will continue without rollback."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/Initialize.php:171, ../inc/App/Ajax/Backend/InstallDemo.php:122
+#: ../inc/App/Ajax/Backend/Initialize.php:236, ../inc/App/Ajax/Backend/InstallDemo.php:130
 msgid "Restore point created — this import can be rolled back."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/Initialize.php:212
+#: ../inc/App/Ajax/Backend/Initialize.php:277
 msgid "Installing your plugins..."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/Initialize.php:213
+#: ../inc/App/Ajax/Backend/Initialize.php:278
 msgid "Database reset completed."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/Initialize.php:213
+#: ../inc/App/Ajax/Backend/Initialize.php:278
 msgid "Cleanup done!"
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/Initialize.php:217
+#: ../inc/App/Ajax/Backend/Initialize.php:282
 msgid "Cleanup completed."
 msgstr ""
 
@@ -1593,86 +1607,90 @@ msgstr ""
 msgid "Demo import process failed. No content file found."
 msgstr ""
 
+#: ../inc/App/Ajax/Backend/InstallDemo.php:106
+msgid "your uploaded files"
+msgstr ""
+
 #. translators: %s: demo name.
-#: ../inc/App/Ajax/Backend/InstallDemo.php:104
+#: ../inc/App/Ajax/Backend/InstallDemo.php:112
 msgid "Content import started for “%s”."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:162, ../inc/App/Ajax/Backend/InstallDemo.php:216, ../inc/App/Ajax/Backend/InstallDemo.php:443, ../inc/App/Ajax/Backend/InstallDemo.php:489, ../inc/App/Ajax/Backend/InstallDemo.php:571
+#: ../inc/App/Ajax/Backend/InstallDemo.php:170, ../inc/App/Ajax/Backend/InstallDemo.php:224, ../inc/App/Ajax/Backend/InstallDemo.php:451, ../inc/App/Ajax/Backend/InstallDemo.php:497, ../inc/App/Ajax/Backend/InstallDemo.php:579
 msgid "Importing Customizer settings."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:163, ../inc/App/Ajax/Backend/InstallDemo.php:217, ../inc/App/Ajax/Backend/InstallDemo.php:432, ../inc/App/Ajax/Backend/InstallDemo.php:444
+#: ../inc/App/Ajax/Backend/InstallDemo.php:171, ../inc/App/Ajax/Backend/InstallDemo.php:225, ../inc/App/Ajax/Backend/InstallDemo.php:440, ../inc/App/Ajax/Backend/InstallDemo.php:452
 msgid "Content imported — smooth sailing!"
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:167, ../inc/App/Ajax/Backend/InstallDemo.php:221, ../inc/App/Ajax/Backend/InstallDemo.php:436, ../inc/App/Ajax/Backend/InstallDemo.php:448
+#: ../inc/App/Ajax/Backend/InstallDemo.php:175, ../inc/App/Ajax/Backend/InstallDemo.php:229, ../inc/App/Ajax/Backend/InstallDemo.php:444, ../inc/App/Ajax/Backend/InstallDemo.php:456
 msgid "Content imported."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:180
+#: ../inc/App/Ajax/Backend/InstallDemo.php:188
 msgid "Bundled media detected — images will be imported from the demo package instead of downloaded."
 msgstr ""
 
 #. translators: %s: error message.
-#: ../inc/App/Ajax/Backend/InstallDemo.php:202
+#: ../inc/App/Ajax/Backend/InstallDemo.php:210
 msgid "Chunked import could not start (%s). Falling back to single-shot import."
 msgstr ""
 
 #. translators: %d: number of items queued.
-#: ../inc/App/Ajax/Backend/InstallDemo.php:229
+#: ../inc/App/Ajax/Backend/InstallDemo.php:237
 msgid "WXR parsed — %d items queued for import."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:368
+#: ../inc/App/Ajax/Backend/InstallDemo.php:376
 msgid "Content import completed."
 msgstr ""
 
 #. translators: %d: number of media files.
-#: ../inc/App/Ajax/Backend/InstallDemo.php:377
+#: ../inc/App/Ajax/Backend/InstallDemo.php:385
 msgid "%d media files imported from the demo package."
 msgstr ""
 
 #. translators: %d: number of failed media files.
-#: ../inc/App/Ajax/Backend/InstallDemo.php:393
+#: ../inc/App/Ajax/Backend/InstallDemo.php:401
 msgid "%d media file(s) could not be downloaded — you can retry them from the result screen."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:431
+#: ../inc/App/Ajax/Backend/InstallDemo.php:439
 msgid "Regenerating images — sit tight!"
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:490
+#: ../inc/App/Ajax/Backend/InstallDemo.php:498
 msgid "No images to regenerate — skipping."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:494
+#: ../inc/App/Ajax/Backend/InstallDemo.php:502
 msgid "No images to regenerate. Skipping."
 msgstr ""
 
 #. translators: %d: number of attachments.
-#: ../inc/App/Ajax/Backend/InstallDemo.php:562
+#: ../inc/App/Ajax/Backend/InstallDemo.php:570
 msgid "Regenerated images for %d attachments."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:572
+#: ../inc/App/Ajax/Backend/InstallDemo.php:580
 msgid "Images regenerated — looking sharp!"
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:576
+#: ../inc/App/Ajax/Backend/InstallDemo.php:584
 msgid "Images regenerated."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:646
+#: ../inc/App/Ajax/Backend/InstallDemo.php:654
 msgid "The importer could not be loaded. Please try again."
 msgstr ""
 
 #. translators: 1: recovered count, 2: still-failed count.
-#: ../inc/App/Ajax/Backend/InstallDemo.php:758
+#: ../inc/App/Ajax/Backend/InstallDemo.php:766
 msgid "Media retry finished — %1$d recovered, %2$d still failed."
 msgstr ""
 
-#: ../inc/App/Ajax/Backend/InstallDemo.php:961
+#: ../inc/App/Ajax/Backend/InstallDemo.php:969
 msgid "Waiting for previous import to finish…"
 msgstr ""
 
@@ -1705,132 +1723,142 @@ msgstr ""
 msgid "Required plugins already installed."
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:265, ../lib/wordpress-importer/class-wp-import.php:274
+#: ../lib/wordpress-importer/class-wp-import.php:278, ../lib/wordpress-importer/class-wp-import.php:287
 msgid "Sorry, there has been an error."
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:265
+#: ../lib/wordpress-importer/class-wp-import.php:278
 msgid "The file does not exist, please try again."
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:313
+#. translators: %s: number of media items skipped.
+#: ../lib/wordpress-importer/class-wp-import.php:330
+msgid "Skipped %s media item — image import is turned off for this import."
+msgid_plural "Skipped %s media items — image import is turned off for this import."
+msgstr[0] ""
+msgstr[1] ""
+
+#: ../lib/wordpress-importer/class-wp-import.php:346
 msgid "All done."
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:313
+#: ../lib/wordpress-importer/class-wp-import.php:346
 msgid "Have fun!"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:314
+#: ../lib/wordpress-importer/class-wp-import.php:347
 msgid "Remember to update the passwords and roles of imported users."
 msgstr ""
 
 #. translators: Post Author
-#: ../lib/wordpress-importer/class-wp-import.php:370
+#: ../lib/wordpress-importer/class-wp-import.php:403
 msgid "Failed to import author %s. Their posts will be attributed to the current user."
 msgstr ""
 
 #. translators: Category Name
-#: ../lib/wordpress-importer/class-wp-import.php:438
+#: ../lib/wordpress-importer/class-wp-import.php:471
 msgid "Failed to import category %s"
 msgstr ""
 
 #. translators: Tag Name
-#: ../lib/wordpress-importer/class-wp-import.php:498
+#: ../lib/wordpress-importer/class-wp-import.php:531
 msgid "Failed to import post tag %s"
 msgstr ""
 
 #. translators: 1. Term Taxonomy, 2. Term Name
 #. translators: 1. Taxonomy, 2. Name
-#: ../lib/wordpress-importer/class-wp-import.php:603, ../lib/wordpress-importer/class-wp-import.php:922
+#: ../lib/wordpress-importer/class-wp-import.php:636, ../lib/wordpress-importer/class-wp-import.php:951
 msgid "Failed to import %1$s %2$s"
 msgstr ""
 
 #. translators: 1. Post Title, 2. Post Type
-#: ../lib/wordpress-importer/class-wp-import.php:708
+#: ../lib/wordpress-importer/class-wp-import.php:741
 msgid "Failed to import &#8220;%1$s&#8221;: Invalid post type %2$s"
 msgstr ""
 
-#. translators: 1. Singular Name, 2. Post Title
-#: ../lib/wordpress-importer/class-wp-import.php:850
-msgid "Skipped %1$s &#8220;%2$s&#8221;: image import is turned off."
-msgstr ""
-
 #. translators: 1. Singular Name, 2. Post Title, 3. Error reason
-#: ../lib/wordpress-importer/class-wp-import.php:878
+#: ../lib/wordpress-importer/class-wp-import.php:907
 msgid "Failed to import %1$s &#8220;%2$s&#8221;: %3$s"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:761
+#: ../lib/wordpress-importer/class-wp-import.php:794
 msgid "%1$s &#8220;%2$s&#8221; already exists."
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1081
+#: ../lib/wordpress-importer/class-wp-import.php:1110
 msgid "Menu item skipped due to missing menu slug"
 msgstr ""
 
 #. translators: Menu Slug
-#: ../lib/wordpress-importer/class-wp-import.php:1102
+#: ../lib/wordpress-importer/class-wp-import.php:1131
 msgid "Menu item skipped due to invalid menu slug: %s"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1206
+#: ../lib/wordpress-importer/class-wp-import.php:1235
 msgid "Fetching attachments is not enabled"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1246
+#: ../lib/wordpress-importer/class-wp-import.php:1275
 msgid "Invalid file type"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1343
+#: ../lib/wordpress-importer/class-wp-import.php:1372
 msgid "Could not create temporary file."
 msgstr ""
 
 #. translators: 1: The WordPress error message. 2: The WordPress error code.
-#: ../lib/wordpress-importer/class-wp-import.php:1390
+#: ../lib/wordpress-importer/class-wp-import.php:1419
 msgid "Request failed due to an error: %1$s (%2$s)"
 msgstr ""
 
 #. translators: 1: The HTTP error message. 2: The HTTP error code.
-#: ../lib/wordpress-importer/class-wp-import.php:1407
+#: ../lib/wordpress-importer/class-wp-import.php:1436
 msgid "Remote server returned the following unexpected result: %1$s (%2$s)"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1420
+#: ../lib/wordpress-importer/class-wp-import.php:1449
 msgid "Remote server did not respond"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1428
+#: ../lib/wordpress-importer/class-wp-import.php:1457
 msgid "Zero size file downloaded"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1434
+#: ../lib/wordpress-importer/class-wp-import.php:1463
 msgid "Downloaded file has incorrect size"
 msgstr ""
 
 #. translators: Max Size
-#: ../lib/wordpress-importer/class-wp-import.php:1445
+#: ../lib/wordpress-importer/class-wp-import.php:1474
 msgid "Remote file is too large, limit is %s"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1483
+#: ../lib/wordpress-importer/class-wp-import.php:1512
 msgid "Sorry, this file type is not permitted for security reasons."
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1499
+#: ../lib/wordpress-importer/class-wp-import.php:1528
 msgid "The uploaded file could not be moved"
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1576
+#: ../lib/wordpress-importer/class-wp-import.php:1542
+msgid "The imported SVG contains unsafe content and was skipped."
+msgstr ""
+
+#: ../lib/wordpress-importer/class-wp-import.php:1614
 msgid "Bundled media file not found."
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1589
+#: ../lib/wordpress-importer/class-wp-import.php:1627
 msgid "Bundled media has a disallowed file type and was skipped."
 msgstr ""
 
-#: ../lib/wordpress-importer/class-wp-import.php:1605
+#: ../lib/wordpress-importer/class-wp-import.php:1643
 msgid "The bundled file could not be copied into the uploads directory."
+msgstr ""
+
+#: ../lib/wordpress-importer/class-wp-import.php:1663
+msgid "The bundled SVG contains unsafe content and was skipped."
 msgstr ""
 
 #: ../lib/wordpress-importer/parsers/class-wxr-parser-regex.php:179, ../lib/wordpress-importer/parsers/class-wxr-parser-simplexml.php:69, ../lib/wordpress-importer/parsers/class-wxr-parser-simplexml.php:76, ../lib/wordpress-importer/parsers/class-wxr-parser-xml.php:239

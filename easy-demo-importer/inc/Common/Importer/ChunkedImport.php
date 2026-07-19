@@ -90,6 +90,7 @@ class ChunkedImport extends SD_EDI_WP_Import {
 		'bundled_media_dir',
 		'bundled_media_imported',
 		'failed_attachments',
+		'attachments_skipped_disabled',
 	];
 
 	/**
@@ -424,7 +425,7 @@ class ChunkedImport extends SD_EDI_WP_Import {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$sql = "SELECT tt.taxonomy AS taxonomy, tt.term_id AS term_id FROM {$wpdb->term_relationships} tr INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id WHERE tr.object_id IN ({$in}) GROUP BY tt.taxonomy, tt.term_id";
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
 		$rows = $wpdb->get_results( $sql );
 
 		if ( empty( $rows ) ) {
