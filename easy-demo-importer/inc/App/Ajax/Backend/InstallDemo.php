@@ -22,6 +22,7 @@ use SigmaDevs\EasyDemoImporter\Common\{
 	Importer\ImportState,
 	Importer\ThumbnailRegenerator,
 	Utils\FailedMedia,
+	Utils\Preflight,
 	Utils\Snapshot
 };
 
@@ -150,6 +151,12 @@ class InstallDemo extends ImporterAjax {
 		 * @since 1.0.0
 		 */
 		do_action( 'sd/edi/before_import', $xmlFile, $this ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+
+		// before_import raised memory_limit / max_execution_time, but ini_set()
+		// and set_time_limit() are silent no-ops on locked hosts. Re-read the
+		// effective values and record honestly what the host granted — once per
+		// session, since before_import fires on every chunk.
+		$this->logEffectiveLimits();
 
 		// Clear any nav menus left by a previous (possibly partial) run so the
 		// importer always starts from a clean slate.
@@ -360,8 +367,26 @@ class InstallDemo extends ImporterAjax {
 		// buffer stays as a safety net that discards any stray output a third-party
 		// import_end hook might print, keeping the AJAX JSON response parseable.
 		ob_start();
-		$importer->finalize();
+		$finalized = $importer->finalize();
 		ob_end_clean();
+
+		// finalize() returns false only when its saved state has vanished — a
+		// concurrent cancel, or a cleanup sweep between batches. Nothing was
+		// backfilled, remapped or recounted, so this run must not be reported as
+		// completed; surface an error and stop instead of advancing.
+		if ( ! $finalized ) {
+			$this->releaseMutex();
+
+			$this->prepareResponse(
+				'',
+				'',
+				'',
+				true,
+				esc_html__( 'The import could not be finalized because its saved progress was missing — it may have been cancelled. Please start the import again.', 'easy-demo-importer' ),
+				esc_html__( 'Start the import again from the beginning.', 'easy-demo-importer' )
+			);
+			return;
+		}
 
 		// When images were excluded, strip the now-dangling featured-image links.
 		if ( 'true' === $this->excludeImages ) {
@@ -882,6 +907,38 @@ class InstallDemo extends ImporterAjax {
 			$this->sessionId,
 			$this->demoSlug
 		);
+	}
+
+	/**
+	 * Records the host-granted resource limits once per import session.
+	 *
+	 * Called after 'sd/edi/before_import' has attempted to raise the limits, so
+	 * the values read here are the effective, post-raise ones. A per-session
+	 * transient guard keeps this to a single log line even though before_import
+	 * fires on every chunk request.
+	 *
+	 * @return void
+	 * @since 2.0.1
+	 */
+	private function logEffectiveLimits(): void {
+		$guard = 'sd_edi_limits_logged_' . $this->sessionId;
+
+		if ( get_transient( $guard ) ) {
+			return;
+		}
+
+		set_transient( $guard, 1, HOUR_IN_SECONDS );
+
+		$entry = Preflight::limitsLogEntry(
+			(string) ini_get( 'memory_limit' ),
+			(int) ini_get( 'max_execution_time' )
+		);
+
+		if ( 'warning' === $entry['level'] ) {
+			ImportLogger::warning( $entry['message'], $this->sessionId, $this->demoSlug );
+		} else {
+			ImportLogger::info( $entry['message'], $this->sessionId, $this->demoSlug );
+		}
 	}
 
 	/**

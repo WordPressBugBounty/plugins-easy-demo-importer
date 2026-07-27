@@ -16,6 +16,7 @@ use FilesystemIterator;
 use RecursiveIteratorIterator;
 use RecursiveDirectoryIterator;
 use SigmaDevs\EasyDemoImporter\Common\{
+	Utils,
 	Traits\Singleton,
 	Functions\Helpers,
 	Abstracts\ImporterAjax
@@ -118,53 +119,99 @@ class DownloadFiles extends ImporterAjax {
 		}
 
 		// Validate the demo ZIP URL before making any network request.
-		if ( ! wp_http_validate_url( $external_url ) ) {
+		$url_error = Utils\RemoteUrl::validate( $external_url );
+
+		if ( null !== $url_error ) {
+			$errors = [
+				Utils\RemoteUrl::INVALID_URL    => [
+					__( 'The demo ZIP URL is not a valid URL.', 'easy-demo-importer' ),
+					__( 'Check the demoZip value in your theme configuration.', 'easy-demo-importer' ),
+				],
+				Utils\RemoteUrl::INVALID_SCHEME => [
+					__( 'The demo ZIP URL must use http or https.', 'easy-demo-importer' ),
+					__( 'Check the demoZip value in your theme configuration.', 'easy-demo-importer' ),
+				],
+				Utils\RemoteUrl::BLOCKED_DOMAIN => [
+					__( 'The demo ZIP URL is not on an allowed domain.', 'easy-demo-importer' ),
+					__( 'The demo file host is not in the sd/edi/allowed_download_domains allowlist. Contact the theme author.', 'easy-demo-importer' ),
+				],
+				Utils\RemoteUrl::LINK_LOCAL     => [
+					__( 'The demo ZIP URL points to a restricted network address.', 'easy-demo-importer' ),
+					__( 'The host resolves to a link-local address, which is reserved for cloud instance metadata and is never a valid demo file location.', 'easy-demo-importer' ),
+				],
+			];
+
 			return [
 				'success' => false,
-				'message' => __( 'The demo ZIP URL is not a valid URL.', 'easy-demo-importer' ),
-				'hint'    => __( 'Check the demoZip value in your theme configuration.', 'easy-demo-importer' ),
+				'message' => $errors[ $url_error ][0],
+				'hint'    => $errors[ $url_error ][1],
 			];
 		}
 
-		$parsed_scheme = wp_parse_url( $external_url, PHP_URL_SCHEME );
-		if ( ! in_array( $parsed_scheme, [ 'http', 'https' ], true ) ) {
-			return [
-				'success' => false,
-				'message' => __( 'The demo ZIP URL must use http or https.', 'easy-demo-importer' ),
-				'hint'    => __( 'Check the demoZip value in your theme configuration.', 'easy-demo-importer' ),
-			];
-		}
-
-		// Allow theme authors to restrict which domains may serve demo files.
-		// Return a non-empty array of hostnames to enable the allowlist.
-		$allowed_domains = (array) apply_filters( 'sd/edi/allowed_download_domains', [] ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
-		if ( ! empty( $allowed_domains ) ) {
-			$host = (string) wp_parse_url( $external_url, PHP_URL_HOST );
-
-			if ( ! in_array( $host, $allowed_domains, true ) ) {
-				return [
-					'success' => false,
-					'message' => __( 'The demo ZIP URL is not on an allowed domain.', 'easy-demo-importer' ),
-					'hint'    => __( 'The demo file host is not in the sd/edi/allowed_download_domains allowlist. Contact the theme author.', 'easy-demo-importer' ),
-				];
-			}
-		}
-
-		$timeout   = (int) apply_filters( 'sd/edi/download_timeout', 120 ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+		// A timeout is a ceiling, not a duration — the request ends as soon as the
+		// transfer does, so a generous default costs a fast host nothing while
+		// giving a slow one room to finish. At 300s a 100MB archive only needs
+		// ~350KB/s, which is a realistic floor for cheap shared hosting. Not set
+		// higher: WP's cURL transport maps this to CURLOPT_TIMEOUT (total
+		// operation time), so a server that connects and then stalls burns the
+		// whole budget before the user sees any error.
+		$timeout   = (int) apply_filters( 'sd/edi/download_timeout', 300 ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 		$sslverify = (bool) apply_filters( 'sd/edi/download_sslverify', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 		$demoData  = $this->demoUploadDir() . 'imported-demo-data.zip';
 
-		$response = wp_remote_get(
+		// Stream the archive straight to disk instead of buffering it in a PHP
+		// string. A large (WooCommerce) demo can exceed the host memory_limit
+		// and fatal before a single post is imported; streaming keeps peak
+		// memory flat regardless of archive size.
+		// Publish byte progress for the modal to poll. This request blocks until
+		// the whole archive has landed, so without a side channel the user sees
+		// an unchanging spinner for the entire transfer.
+		Utils\DownloadProgress::start( $this->sessionId );
+
+		$response = Utils\RemoteUrl::get(
 			$external_url,
 			[
 				'timeout'   => $timeout,
 				'sslverify' => $sslverify,
+				'stream'    => true,
+				'filename'  => $demoData,
 			]
 		);
 
+		Utils\DownloadProgress::stop( $this->sessionId );
+
 		if ( is_wp_error( $response ) ) {
+			// A streamed request may leave a partial file behind on failure.
+			$wp_filesystem->delete( $demoData );
+
 			$error_message = $response->get_error_message();
 			$is_ssl_error  = (bool) preg_match( '/ssl|certificate|curl error 60|curl error 35/i', $error_message );
+
+			// cURL reports a timeout as error 28 ("Operation timed out after N
+			// milliseconds with M bytes received"). Without this branch it fell
+			// through to the connection-failure message below, which told users
+			// on a slow link to check their outbound internet access — a wrong
+			// diagnosis that sends them chasing a problem they do not have.
+			if ( ! $is_ssl_error && preg_match( '/timed out|timeout|curl error 28/i', $error_message ) ) {
+				return [
+					'success' => false,
+					'message' => sprintf(
+						/* translators: %d: timeout in seconds. */
+						_n(
+							'The demo file download timed out after %d second.',
+							'The demo file download timed out after %d seconds.',
+							$timeout,
+							'easy-demo-importer'
+						),
+						$timeout
+					),
+					'hint'    => sprintf(
+						/* translators: %s: WordPress filter snippet. */
+						__( "The archive may be large, or the connection between your server and the demo file server slow. Allow more time by adding %s to your theme's functions.php. If your site sits behind Cloudflare or a similar proxy, its own gateway timeout may cut the request short regardless.", 'easy-demo-importer' ),
+						"add_filter('sd/edi/download_timeout', function() { return 600; });"
+					),
+				];
+			}
 
 			if ( $is_ssl_error ) {
 				return [
@@ -188,13 +235,14 @@ class DownloadFiles extends ImporterAjax {
 		$http_code = wp_remote_retrieve_response_code( $response );
 
 		if ( 200 !== $http_code ) {
+			// On a non-200, the streamed file holds the error body, not the zip.
+			$wp_filesystem->delete( $demoData );
+
 			return $this->httpCodeToError( (int) $http_code );
 		}
 
-		$file = wp_remote_retrieve_body( $response );
-
-		$wp_filesystem->put_contents( $demoData, $file );
-
+		// With 'stream' => true the body is written to $demoData directly and
+		// wp_remote_retrieve_body() is empty, so no put_contents() is needed.
 		if ( ! $wp_filesystem->exists( $demoData ) ) {
 			return [
 				'success' => false,
@@ -273,7 +321,7 @@ class DownloadFiles extends ImporterAjax {
 			],
 			408 => [
 				'message' => __( 'The demo file server took too long to respond (408 Request Timeout).', 'easy-demo-importer' ),
-				'hint'    => __( 'The file server may be temporarily overloaded. Try again in a few minutes. You can also increase the timeout by adding add_filter(\'sd/edi/download_timeout\', fn() => 300); to your theme\'s functions.php.', 'easy-demo-importer' ),
+				'hint'    => __( 'The file server may be temporarily overloaded. Try again in a few minutes. You can also increase the timeout by adding add_filter(\'sd/edi/download_timeout\', function() { return 600; }); to your theme\'s functions.php.', 'easy-demo-importer' ),
 			],
 			429 => [
 				'message' => __( 'Too many download requests were made (429 Too Many Requests).', 'easy-demo-importer' ),

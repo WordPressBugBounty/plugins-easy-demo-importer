@@ -73,10 +73,16 @@ final class Preflight {
 	 * @since 2.0.0
 	 */
 	public static function report(): array {
+		// Honestly attempt to raise the two limits the importer benefits from, then
+		// re-read what the host actually granted. The checks below report the
+		// effective value and, when the host refused or capped the request, say so.
+		$memory_tune = self::attemptRaiseMemory( self::RECOMMENDED_MEMORY );
+		$exec_tune   = self::attemptRaiseExecutionTime( self::RECOMMENDED_EXECUTION_TIME );
+
 		$checks = [
 			self::phpVersionCheck( PHP_VERSION, self::MIN_PHP ),
-			self::memoryCheck( (string) ini_get( 'memory_limit' ), self::RECOMMENDED_MEMORY ),
-			self::executionTimeCheck( (int) ini_get( 'max_execution_time' ) ),
+			self::memoryCheck( $memory_tune['after'], self::RECOMMENDED_MEMORY, $memory_tune ),
+			self::executionTimeCheck( (int) $exec_tune['after'], $exec_tune ),
 			self::extensionCheck( 'ZipArchive', class_exists( '\ZipArchive' ), true ),
 			self::extensionCheck( 'SimpleXML', extension_loaded( 'simplexml' ), true ),
 			self::imageLibraryCheck( extension_loaded( 'gd' ), extension_loaded( 'imagick' ) ),
@@ -134,20 +140,34 @@ final class Preflight {
 	 * often raise the limit for the import, and the chunked importer keeps peak
 	 * usage low.
 	 *
-	 * @param string $current  Current memory_limit ini value.
-	 * @param string $required Recommended memory floor.
+	 * @param string     $current  Effective memory_limit ini value (post-tune).
+	 * @param string     $required Recommended memory floor.
+	 * @param array|null $tune     Optional auto-tune outcome from attemptRaiseMemory().
 	 *
 	 * @return array
 	 * @since 2.0.0
 	 */
-	public static function memoryCheck( string $current, string $required ): array {
+	public static function memoryCheck( string $current, string $required, ?array $tune = null ): array {
 		$current_bytes = self::toBytes( $current );
 
 		// -1 means unlimited.
 		$ok = -1 === $current_bytes || $current_bytes >= self::toBytes( $required );
 
 		if ( $ok ) {
-			$message = -1 === $current_bytes ? esc_html__( 'Unlimited', 'easy-demo-importer' ) : $current;
+			if ( -1 === $current_bytes ) {
+				$message = esc_html__( 'Unlimited', 'easy-demo-importer' );
+			} elseif ( $tune && ! empty( $tune['raised'] ) ) {
+				/* translators: 1: raised-to limit, 2: original limit. */
+				$message = sprintf( esc_html__( '%1$s — raised for this import (was %2$s).', 'easy-demo-importer' ), $current, $tune['before'] );
+			} else {
+				$message = $current;
+			}
+		} elseif ( $tune && ! empty( $tune['refused'] ) ) {
+			/* translators: 1: enforced limit, 2: recommended limit. */
+			$message = sprintf( esc_html__( '%1$s — the host would not raise it; %2$s or more is recommended for large imports.', 'easy-demo-importer' ), $current, $required );
+		} elseif ( $tune && ! empty( $tune['raised'] ) ) {
+			/* translators: 1: raised-to limit, 2: original limit, 3: recommended limit. */
+			$message = sprintf( esc_html__( '%1$s — raised from %2$s but still below the recommended %3$s for large imports.', 'easy-demo-importer' ), $current, $tune['before'], $required );
 		} else {
 			/* translators: 1: current limit, 2: recommended limit. */
 			$message = sprintf( esc_html__( '%1$s — %2$s or more is recommended for large imports.', 'easy-demo-importer' ), $current, $required );
@@ -158,28 +178,36 @@ final class Preflight {
 			esc_html__( 'PHP memory limit', 'easy-demo-importer' ),
 			$ok ? self::PASS : self::WARN,
 			$message,
-			false
+			false,
+			(bool) ( $tune && ! empty( $tune['raised'] ) )
 		);
 	}
 
 	/**
-	 * max_execution_time check. A low limit warns rather than blocks — the
+	 * The max_execution_time check. A low limit warns rather than blocks — the
 	 * importer runs in resumable chunks specifically to survive this.
 	 *
-	 * @param int $current Current max_execution_time ini value, in seconds.
+	 * @param int        $current Effective max_execution_time ini value (post-tune), in seconds.
+	 * @param array|null $tune    Optional auto-tune outcome from attemptRaiseExecutionTime().
 	 *
 	 * @return array
 	 * @since 2.0.0
 	 */
-	public static function executionTimeCheck( int $current ): array {
+	public static function executionTimeCheck( int $current, ?array $tune = null ): array {
 		// 0 means unlimited (common on CLI or hosts that don't enforce it).
 		$ok = 0 === $current || $current >= self::RECOMMENDED_EXECUTION_TIME;
 
 		if ( 0 === $current ) {
 			$message = esc_html__( 'Unlimited', 'easy-demo-importer' );
+		} elseif ( $ok && $tune && ! empty( $tune['raised'] ) ) {
+			/* translators: 1: raised-to seconds, 2: original seconds. */
+			$message = sprintf( esc_html__( '%1$d seconds — raised for this import (was %2$d).', 'easy-demo-importer' ), $current, (int) $tune['before'] );
 		} elseif ( $ok ) {
 			/* translators: %d: seconds. */
 			$message = sprintf( esc_html__( '%d seconds', 'easy-demo-importer' ), $current );
+		} elseif ( $tune && ! empty( $tune['refused'] ) ) {
+			/* translators: %d: seconds. */
+			$message = sprintf( esc_html__( '%d seconds — the host would not raise it; the import runs in resumable chunks to work around this.', 'easy-demo-importer' ), $current );
 		} else {
 			/* translators: %d: seconds. */
 			$message = sprintf( esc_html__( '%d seconds — the import runs in resumable chunks to work around this, but a higher limit is safer.', 'easy-demo-importer' ), $current );
@@ -190,7 +218,8 @@ final class Preflight {
 			esc_html__( 'PHP execution time', 'easy-demo-importer' ),
 			$ok ? self::PASS : self::WARN,
 			$message,
-			false
+			false,
+			(bool) ( $tune && ! empty( $tune['raised'] ) )
 		);
 	}
 
@@ -228,6 +257,182 @@ final class Preflight {
 		}
 
 		return $number;
+	}
+
+	/**
+	 * Best-effort raise of the PHP memory limit, then an honest re-read.
+	 *
+	 * `ini_set()` is a no-op on hosts that lock `memory_limit` at the server
+	 * level, so the return value is meaningless — the only truth is what
+	 * `ini_get()` reports afterwards. Skips the attempt entirely when the limit
+	 * is already unlimited or at/above the target.
+	 *
+	 * @param string $target Desired memory floor (e.g. '256M').
+	 *
+	 * @return array{before:string,requested:string,after:string,raised:bool,reached:bool,refused:bool}
+	 * @since 2.0.1
+	 */
+	public static function attemptRaiseMemory( string $target ): array {
+		$before       = (string) ini_get( 'memory_limit' );
+		$before_bytes = self::toBytes( $before );
+
+		if ( -1 === $before_bytes || $before_bytes >= self::toBytes( $target ) ) {
+			return self::memoryTuneOutcome( $before, $before, $before );
+		}
+
+		// Same hazard as set_time_limit() below: a disabled function is a fatal
+		// undefined-function call, not a silent failure. ini_set is rarer to
+		// disable, but the guard costs nothing and the report must never be the
+		// thing that breaks the page it is reporting on.
+		if ( ! function_exists( 'ini_set' ) ) {
+			return self::memoryTuneOutcome( $before, $target, $before );
+		}
+
+		ini_set( 'memory_limit', $target ); // phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged, WordPress.PHP.IniSet.memory_limit_Disallowed
+		$after = (string) ini_get( 'memory_limit' );
+
+		return self::memoryTuneOutcome( $before, $target, $after );
+	}
+
+	/**
+	 * Best-effort raise of max_execution_time, then an honest re-read.
+	 *
+	 * `set_time_limit()` may be disabled (via `disable_functions`) or ignored on
+	 * some SAPIs, so its effect is verified by re-reading `max_execution_time`.
+	 * Skips the attempt when the limit is already unlimited (0) or high enough.
+	 *
+	 * @param int $target Desired execution-time floor, in seconds.
+	 *
+	 * @return array{before:int,requested:int,after:int,raised:bool,reached:bool,refused:bool}
+	 * @since 2.0.1
+	 */
+	public static function attemptRaiseExecutionTime( int $target ): array {
+		$before = (int) ini_get( 'max_execution_time' );
+
+		if ( 0 === $before || $before >= $target ) {
+			return self::execTuneOutcome( $before, $before, $before );
+		}
+
+		// A function listed in `disable_functions` is removed from the function
+		// table entirely, so calling it is a fatal "undefined function" — not a
+		// warning, and the error-suppression operator cannot catch it. Inside a
+		// namespace the failed lookup is even reported under the namespaced name.
+		// Shared hosts disable set_time_limit routinely, so this guard is what
+		// keeps the readiness report from taking the whole endpoint down with it.
+		if ( ! function_exists( 'set_time_limit' ) ) {
+			return self::execTuneOutcome( $before, $target, $before );
+		}
+
+		set_time_limit( $target ); // phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged -- best-effort raise, verified by the re-read below.
+		$after = (int) ini_get( 'max_execution_time' );
+
+		return self::execTuneOutcome( $before, $target, $after );
+	}
+
+	/**
+	 * Honest post-raise limits report for the activity log (pure — no side
+	 * effects). The import pipeline raises `memory_limit` / `max_execution_time`
+	 * at the start of every chunk, but `ini_set()`/`set_time_limit()` are silent
+	 * no-ops on locked hosts. Grading the *effective* (already-raised) values
+	 * against the recommended floors records what the host actually granted, so a
+	 * refusal surfaces in the log up front instead of only as a mid-import fatal.
+	 *
+	 * @param string $memory Effective memory_limit ini value (post-raise).
+	 * @param int    $exec   Effective max_execution_time, in seconds (post-raise).
+	 *
+	 * @return array{level:string,message:string} 'info' when both meet the floor, else 'warning'.
+	 * @since 2.0.1
+	 */
+	public static function limitsLogEntry( string $memory, int $exec ): array {
+		$mem_bytes = self::toBytes( $memory );
+		$mem_ok    = -1 === $mem_bytes || $mem_bytes >= self::toBytes( self::RECOMMENDED_MEMORY );
+		$exec_ok   = 0 === $exec || $exec >= self::RECOMMENDED_EXECUTION_TIME;
+
+		$mem_label  = -1 === $mem_bytes ? esc_html__( 'unlimited', 'easy-demo-importer' ) : $memory;
+		$exec_label = 0 === $exec
+			? esc_html__( 'unlimited', 'easy-demo-importer' )
+			/* translators: %d: seconds. */
+			: sprintf( esc_html__( '%ds', 'easy-demo-importer' ), $exec );
+
+		if ( $mem_ok && $exec_ok ) {
+			return [
+				'level'   => 'info',
+				/* translators: 1: memory limit, 2: execution time. */
+				'message' => sprintf( esc_html__( 'Resource limits ready — memory %1$s, execution time %2$s.', 'easy-demo-importer' ), $mem_label, $exec_label ),
+			];
+		}
+
+		if ( ! $mem_ok && ! $exec_ok ) {
+			return [
+				'level'   => 'warning',
+				/* translators: 1: memory limit, 2: recommended memory, 3: execution time, 4: recommended execution time. */
+				'message' => sprintf( esc_html__( 'The host would not raise resource limits — memory %1$s (%2$s recommended) and execution time %3$s (%4$ds recommended). Large imports may fail; a bundled media package is the most reliable option.', 'easy-demo-importer' ), $mem_label, self::RECOMMENDED_MEMORY, $exec_label, self::RECOMMENDED_EXECUTION_TIME ),
+			];
+		}
+
+		if ( ! $mem_ok ) {
+			return [
+				'level'   => 'warning',
+				/* translators: 1: memory limit, 2: recommended memory. */
+				'message' => sprintf( esc_html__( 'The host capped the memory limit at %1$s (%2$s recommended); the import will continue, but a very large demo may run short of memory.', 'easy-demo-importer' ), $mem_label, self::RECOMMENDED_MEMORY ),
+			];
+		}
+
+		return [
+			'level'   => 'warning',
+			/* translators: 1: execution time, 2: recommended execution time. */
+			'message' => sprintf( esc_html__( 'The host capped the execution time at %1$s (%2$ds recommended); the import runs in resumable chunks to work around this.', 'easy-demo-importer' ), $exec_label, self::RECOMMENDED_EXECUTION_TIME ),
+		];
+	}
+
+	/**
+	 * Grades a memory-limit tune attempt (pure — no side effects).
+	 *
+	 * @param string $before    Limit before the attempt.
+	 * @param string $requested Limit that was requested.
+	 * @param string $after     Limit after the attempt (re-read).
+	 *
+	 * @return array{before:string,requested:string,after:string,raised:bool,reached:bool,refused:bool}
+	 * @since 2.0.1
+	 */
+	public static function memoryTuneOutcome( string $before, string $requested, string $after ): array {
+		$before_bytes    = self::toBytes( $before );
+		$after_bytes     = self::toBytes( $after );
+		$requested_bytes = self::toBytes( $requested );
+		$unlimited       = -1 === $after_bytes;
+
+		return [
+			'before'    => $before,
+			'requested' => $requested,
+			'after'     => $after,
+			'raised'    => ! $unlimited && $after_bytes > $before_bytes,
+			'reached'   => $unlimited || $after_bytes >= $requested_bytes,
+			'refused'   => $requested_bytes > $before_bytes && $after_bytes <= $before_bytes,
+		];
+	}
+
+	/**
+	 * Grades an execution-time tune attempt (pure — no side effects). 0 is
+	 * treated as unlimited, matching PHP's max_execution_time semantics.
+	 *
+	 * @param int $before    Seconds before the attempt.
+	 * @param int $requested Seconds that were requested.
+	 * @param int $after     Seconds after the attempt (re-read).
+	 *
+	 * @return array{before:int,requested:int,after:int,raised:bool,reached:bool,refused:bool}
+	 * @since 2.0.1
+	 */
+	public static function execTuneOutcome( int $before, int $requested, int $after ): array {
+		$unlimited = 0 === $after;
+
+		return [
+			'before'    => $before,
+			'requested' => $requested,
+			'after'     => $after,
+			'raised'    => ! $unlimited && 0 !== $before && $after > $before,
+			'reached'   => $unlimited || $after >= $requested,
+			'refused'   => 0 !== $before && $requested > $before && $after <= $before,
+		];
 	}
 
 	/**
@@ -448,17 +653,22 @@ final class Preflight {
 	 * @param string $status   pass|warn|fail.
 	 * @param string $message  Detail message.
 	 * @param bool   $blocking Whether a fail blocks the import.
+	 * @param bool   $adjusted Whether the plugin changed this value itself.
 	 *
 	 * @return array
 	 * @since 2.0.0
 	 */
-	private static function check( string $id, string $label, string $status, string $message, bool $blocking ): array {
+	private static function check( string $id, string $label, string $status, string $message, bool $blocking, bool $adjusted = false ): array {
 		return [
 			'id'       => $id,
 			'label'    => $label,
 			'status'   => $status,
 			'message'  => $message,
 			'blocking' => $blocking,
+			// Set when the plugin raised this limit rather than merely reading it.
+			// The message already says so in prose, but the UI needs a flag it can
+			// style on — a raised row otherwise looks like any other passing check.
+			'adjusted' => $adjusted,
 		];
 	}
 }

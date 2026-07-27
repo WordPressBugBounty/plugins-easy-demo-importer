@@ -4,9 +4,9 @@ Donate link:
 Tags: demo importer, one click demo importer, theme demo importer, WordPress demo importer, content import plugin
 Requires at least: 5.5
 Tested up to: 7.0
-Stable tag: 2.0.1
+Stable tag: 2.0.2
 Requires PHP: 7.4
-License: GPLv3
+License: GPLv3 or later
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 GitHub Repository: https://github.com/wp-sigmadevs/easy-demo-importer
 
@@ -31,7 +31,10 @@ Are you tired of the complex and time-consuming process of setting up your WordP
 * **Resumable, Timeout-Proof Import:** Large and WooCommerce demos import in time-boxed batches that survive gateway timeouts and auto-resume if interrupted.
 * **Manual Import:** Upload your own content, media, and settings — as separate files or a single .zip bundle — without a theme configuration.
 * **One-Click Rollback:** Create a restore point before importing and revert your site with a single click.
-* **Activity Log:** Every import and thumbnail run is recorded with a live, per-item log for easy troubleshooting.
+* **Status & Activity Page:** A single tabbed page pairing a live, per-item log of every import and thumbnail run with a system status checklist that flags server issues before you start.
+* **Regenerate Thumbnails:** A built-in, resumable thumbnail regenerator with force-all-sizes and one-at-a-time modes.
+* **WP-CLI Support:** Manage imports from the command line — `wp edi demos`, `wp edi regenerate` and `wp edi rollback`.
+* **Security-Hardened Import:** Imported SVGs are sanitized against stored XSS, and every remote download is checked against SSRF on each redirect hop.
 * **User-Friendly Interface:** Our intuitive interface makes it easy for users of all skill levels to import demo data.
 * **Universal Theme Compatibility:** Can be configured to work seamlessly with a wide range of WordPress themes, ensuring broad compatibility.
 * **Developer Hooks:** offers a wide range of hooks that give theme developers full control to perform advanced custom actions. These hooks allow for precise adjustments and customizations in the import process.
@@ -40,10 +43,9 @@ Are you tired of the complex and time-consuming process of setting up your WordP
 * **Plugin Settings and Theme Options:** Can be configured to import any plugin settings and theme options, ensuring a cohesive website setup.
 * **Tabbed Categories & Search feature:** Includes a convenient tabbed interface that categorizes demos into various categories with a powerful search feature.
 * **Fluent Forms Import:** Can be configured to automatically import Fluent Forms, retaining your forms' integrity.
-* **Slider Revolution Import:** Can be configured to automatically import Slider Revolution slides, ensuring the slides' functionalities.
+* **Slider Revolution & LayerSlider Import:** Can be configured to automatically import Slider Revolution and LayerSlider slides, ensuring the slides' functionalities.
 * **Modern React-Powered Pages:** Enjoy modern, React-powered admin pages for a seamless user experience.
 * **Built-in Required Plugins Installer:** Features a built-in Required Plugins Installer that can be configured for hassle-free import process.
-* **System Status Checker:** Our built-in system status checker acts as a helpful pre-import checklist, alerting you to any potential issues that need addressing.
 * **Automatic URL and Commenter Email Replacement:** Designed for developers, our plugin has a versatile built-in tool for updating URLs and email addresses in your imported content.
 * **Elementor Taxonomy Data Fix:** Resolve Elementor widgets data import issues with our automatic taxonomy data fix.
 
@@ -139,6 +141,24 @@ For any inquiries, bug reports, or suggestions, please submit your request [here
 6. Example of how the system status page looks.
 
 == Changelog ==
+
+= 2.0.2 (27-July-2026) =
+* Feature: Live progress bar for the demo-archive download.
+* Feature: Share or export any import-log run (copy or download .txt), plus a run-duration badge and a collapsed "Skipped N media items" summary.
+* Feature: Preflight auto-tuner raises PHP time/memory limits where allowed and flags plugin-adjusted limits.
+* Feature: Demos with missing required plugins are greyed out; caching plugins are flushed after import.
+* Security: Both remote-download paths (demo archive and plugin installer) are hardened against SSRF, re-validating every redirect hop.
+* Fix: Large archives stream to disk instead of buffering in memory, avoiding out-of-memory crashes.
+* Fix: Preflight no longer errors when set_time_limit/ini_set are disabled.
+* Fix: The server-requirements warning stays dismissed, and failed-term log lines group correctly.
+* Fix: A content import that loses its saved progress mid-run now reports an error and stops instead of falsely claiming completion.
+* Fix: The Activity log lists your recent import runs instead of only the latest one.
+* Fix: Uninstalling removes leftover restore-point shadow tables instead of orphaning them in the database.
+* Fix: Error notices sent as plain text no longer render as an empty box.
+* Fix: The Configure step and the Manual Import dialog no longer scroll on a standard screen.
+* Performance: The demo picker no longer re-renders every card on each search keystroke.
+* Tweak: Restore point now defaults off; download timeout raised to 300s and reported honestly.
+* Tweak: Shortened the restore-point description and removed the raw entry count from the import log's run header.
 
 = 2.0.1 (19-July-2026) =
 * Security: Imported SVG files are now sanitized during demo import to prevent stored XSS.

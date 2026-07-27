@@ -19,6 +19,8 @@ use SigmaDevs\EasyDemoImporter\Common\{
 	Abstracts\Base,
 	Traits\Singleton,
 	Utils\Preflight,
+	Utils\DownloadProgress,
+	Utils\DemoRequirements,
 	Utils\FailedMedia,
 	Utils\Snapshot,
 	Functions\Helpers,
@@ -93,9 +95,12 @@ class RestEndpoints extends Base {
 	/**
 	 * Sends a REST response with an error status.
 	 *
-	 * @param string $error The error message to be included in the response.
-	 * @param array  $errorData An optional array of additional error data.
-	 * @param int    $code The HTTP status code to be returned in the response.
+	 * @param string|array $error The error message. Either a plain string, or an
+	 *                            array `{ text, btnUrl?, btnText? }` when the error
+	 *                            carries a call-to-action; ErrorMessage.jsx renders
+	 *                            both shapes.
+	 * @param array        $errorData An optional array of additional error data.
+	 * @param int          $code The HTTP status code to be returned in the response.
 	 *
 	 * @return WP_REST_Response
 	 * @since 1.0.0
@@ -152,6 +157,50 @@ class RestEndpoints extends Base {
 		$this->addFailedMediaEndpoint();
 		$this->addRollbackEndpoint();
 		$this->addDiscardEndpoint();
+		$this->addDownloadProgressEndpoint();
+	}
+
+	/**
+	 * Add Download Progress route.
+	 *
+	 * Polled by the modal while the demo archive download is in flight. Reads
+	 * a transient only — it must never take the import mutex, or it would
+	 * block behind the very download it is reporting on.
+	 *
+	 * @return void
+	 * @since 2.0.1
+	 */
+	public function addDownloadProgressEndpoint() {
+		register_rest_route(
+			$this->getNamespace(),
+			'/download-progress',
+			[
+				'methods'             => 'GET',
+				'callback'            => [ $this, 'downloadProgress' ],
+				'permission_callback' => [ $this, 'permission' ],
+				'args'                => [
+					'sessionId' => [
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					],
+				],
+			]
+		);
+	}
+
+	/**
+	 * Current byte progress for a session's demo download.
+	 *
+	 * @param \WP_REST_Request $request Request object.
+	 *
+	 * @return WP_REST_Response
+	 * @since 2.0.1
+	 */
+	public function downloadProgress( $request ) {
+		return $this->sendResponse(
+			DownloadProgress::read( (string) $request->get_param( 'sessionId' ) ),
+			esc_html__( 'Data is ready to fetch', 'easy-demo-importer' )
+		);
 	}
 
 	/**
@@ -418,10 +467,12 @@ class RestEndpoints extends Base {
 		$limit     = (int) $request->get_param( 'limit' );
 		$limit     = $limit > 0 ? $limit : 500;
 
-		// Grouped view (admin page): runs, newest first. Flat view (modal result
-		// screen): entries for a single session, or all when no session given.
+		// Grouped view (admin page): the newest import runs, newest first — windowed
+		// by run so one large import can't crowd older runs out (getRuns manages its
+		// own run cap). Flat view (modal result screen): entries for a single
+		// session, or all when no session given, bounded by $limit.
 		$data = $group
-			? ImportLogger::getRuns( $limit )
+			? ImportLogger::getRuns()
 			: ImportLogger::get( $sessionId, $limit );
 
 		return $this->sendResponse( $data, esc_html__( 'Import log fetched.', 'easy-demo-importer' ) );
@@ -473,6 +524,18 @@ class RestEndpoints extends Base {
 
 		if ( empty( $themeConfig ) ) {
 			return $this->sendError( $errorData );
+		}
+
+		// Attach per-demo requirement status so the UI can grey out demos whose
+		// prerequisites (PHP version, extensions, must-be-active plugins) are
+		// not met. Evaluated server-side because the client cannot see them.
+		if ( ! empty( $themeConfig['demoData'] ) && is_array( $themeConfig['demoData'] ) ) {
+			foreach ( $themeConfig['demoData'] as $slug => $demo ) {
+				$status = DemoRequirements::evaluate( $demo['requires'] ?? [] );
+
+				$themeConfig['demoData'][ $slug ]['requirementsMet']     = $status['met'];
+				$themeConfig['demoData'][ $slug ]['missingRequirements'] = $status['missing'];
+			}
 		}
 
 		return $this->sendResponse( $themeConfig, esc_html__( 'Data is ready to fetch', 'easy-demo-importer' ) );
